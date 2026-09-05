@@ -79,3 +79,17 @@ test('official terminology uses Naruto as the product parallel vocabulary', () =
   assert.ok(DEPRECATED_AGENT_TERMS.includes('shadow clone'))
   assert.ok(DEPRECATED_AGENT_TERMS.includes('native agent'))
 })
+
+
+test('simplification requests in Korean and English remain execution work', () => {
+  for (const prompt of [
+    '불필요한 기능 및 게이트 및 코드를 제거하고 핵심 컨셉만 유지해줘',
+    'gpt6 아스트라 모델에 맞게 최적화하고 미비점을 개선해줘',
+    '코드를 단순화하고 정리해줘',
+    'Simplify the runtime',
+    'Optimize the parser',
+    'Improve the workflow'
+  ]) assert.equal(classifyTaskProfile(prompt), 'bounded-work', prompt)
+  assert.equal(classifyTaskProfile('최적화 방법을 설명해줘'), 'answer')
+  assert.equal(classifyTaskProfile('인증 권한 검사를 제거해줘'), 'high-risk')
+})

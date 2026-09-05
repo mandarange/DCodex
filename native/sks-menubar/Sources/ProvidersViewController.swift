@@ -18,10 +18,17 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     let operations: OperationCoordinator
 
     // The five product cards use these concrete status surfaces.
+    let authPriorityToggle = NSSwitch()
+    let authPriorityStatus = NativeView.detail("Checking routing preference…")
+    var authPriorityEnabled: Bool?
+    var authPriorityBusy = false
+    var authPriorityGeneration = 0
     let providerStatus = NativeView.detail("Desktop Bridge status has not loaded.")
     let bridgeServiceStatus = NativeView.detail("Service: checking…")
     let bridgeHttpStatus = NativeView.detail("HTTP probe: not attempted")
     let bridgeWebSocketStatus = NativeView.detail("WebSocket probe: not attempted")
+    let codexLbProfileDetails = NativeView.detail("Codex-LB details have not loaded.")
+    let openRouterProfileDetails = NativeView.detail("OpenRouter details have not loaded.")
     let cliProviderStatus = NativeView.detail("Codex-LB profile: checking…")
     let openRouterCredentialStatus = NativeView.detail("OpenRouter profile: checking…")
     let catalogSyncStatus = NativeView.detail("Combined catalog: checking required v3 state…")
@@ -87,18 +94,86 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         routesStatus.setAccessibilityIdentifier("sks-provider-routes-status")
 
         view = NativeView.page([
-            NativeView.row([NativeView.title("Providers & Models"), globalSpinner]),
-            NativeView.detail("One managed Desktop Bridge routes through independent Codex-LB and OpenRouter profiles. ChatGPT OAuth remains Codex-owned; no silent provider fallback is allowed."),
-            makeDesktopBridgeCard(),
+            NativeView.row([NativeView.title("Connections"), globalSpinner]),
+            NativeView.detail("Connect your accounts and choose how Codex routes models."),
+            makeAuthPriorityCard(),
             makeProviderCredentialsCard(),
-            makeCombinedCatalogCard(),
-            makeModelExposureCard(),
-            makeRoutesCard(),
-            makeCapabilityMatrixCard()
+            NativeDisclosure("Models in Codex", views: [makeModelExposureCard(), makeCombinedCatalogCard()]),
+            NativeDisclosure("Bridge diagnostics", views: [makeDesktopBridgeCard(), makeRoutesCard(), makeCapabilityMatrixCard()])
         ])
     }
 
     func refreshOnAppear() { refresh(); refreshModelExposure() }
+
+    private func makeAuthPriorityCard() -> NSBox {
+        authPriorityToggle.target = self
+        authPriorityToggle.action = #selector(toggleAuthPriority)
+        authPriorityToggle.isEnabled = false
+        authPriorityToggle.setAccessibilityLabel("Prefer Codex-LB")
+        authPriorityToggle.setAccessibilityIdentifier("sks-provider-auth-priority-toggle")
+        authPriorityStatus.setAccessibilityIdentifier("sks-provider-auth-priority-status")
+        let label = NativeView.sectionTitle("Prefer Codex-LB")
+        return NativeView.card(title: "Default connection", subtitle: "", views: [
+            NativeView.row([authPriorityToggle, label]), authPriorityStatus,
+            NativeView.detail("Use the saved Codex-LB connection first for eligible models. Explicit provider choices and session pins still apply.")
+        ])
+    }
+
+    func refreshAuthPriority() {
+        guard !authPriorityBusy else { return }
+        authPriorityGeneration += 1
+        let generation = authPriorityGeneration
+        processClient.run(["bridge", "auth-priority", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
+            guard let self = self, !self.authPriorityBusy, generation == self.authPriorityGeneration else { return }
+            guard result.code == 0, !result.truncated,
+                  let payload = self.json(result.output), payload["ok"] as? Bool == true,
+                  let priority = AuthPriorityState.decode(payload) else {
+                self.authPriorityToggle.isEnabled = false
+                self.authPriorityStatus.stringValue = "Preference unavailable. Reopen Connections to check again."
+                self.authPriorityStatus.textColor = .systemOrange
+                return
+            }
+            self.renderAuthPriority(priority)
+        }
+    }
+
+    private func renderAuthPriority(_ state: AuthPriorityState) {
+        authPriorityEnabled = state.enabled
+        authPriorityToggle.state = state.enabled ? .on : .off
+        authPriorityToggle.isEnabled = !busy && !authPriorityBusy
+        authPriorityStatus.stringValue = state.message
+        authPriorityStatus.textColor = state.state == "active" ? .systemGreen : state.state == "unavailable" ? .systemOrange : .secondaryLabelColor
+    }
+
+    @objc func toggleAuthPriority() {
+        guard !authPriorityBusy, let previous = authPriorityEnabled else { return }
+        let desired = authPriorityToggle.state == .on
+        guard let operation = operations.begin(kind: "bridge-auth-priority", mutationGroup: "codex-config", summary: "Change Codex-LB preference") else {
+            authPriorityToggle.state = previous ? .on : .off
+            authPriorityStatus.stringValue = "Another configuration change is running. Try again when it finishes."
+            return
+        }
+        authPriorityGeneration += 1
+        authPriorityBusy = true
+        authPriorityToggle.isEnabled = false
+        authPriorityStatus.stringValue = "Saving preference…"
+        _ = operations.update(operation, state: .running, stage: "saving", progress: nil, summary: "Saving Codex-LB preference")
+        processClient.run(["bridge", "auth-priority", desired ? "on" : "off", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+            guard let self = self else { return }
+            self.authPriorityBusy = false
+            let payload = self.json(result.output)
+            let state = payload.flatMap(AuthPriorityState.decode)
+            let succeeded = result.code == 0 && !result.truncated && payload?["ok"] as? Bool == true && state?.enabled == desired
+            _ = self.operations.update(operation, state: succeeded ? .succeeded : .failed, stage: "complete", progress: 1, summary: succeeded ? "Codex-LB preference saved" : "Codex-LB preference could not be saved")
+            if succeeded, let state = state { self.renderAuthPriority(state) }
+            else {
+                self.authPriorityToggle.state = previous ? .on : .off
+                self.authPriorityToggle.isEnabled = !self.busy
+                self.authPriorityStatus.stringValue = "Could not save preference. The previous setting is shown; check the Codex-LB connection and retry."
+                self.authPriorityStatus.textColor = .systemOrange
+            }
+        }
+    }
 
     private func makeDesktopBridgeCard() -> NSBox {
         let repair = NativeView.button("Repair", target: self, action: #selector(repairDesktopBridge))
@@ -108,7 +183,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         registerProviderAction(transport, id: "sks-provider-verify-transport")
         registerProviderAction(deep, id: "sks-provider-verify-deep")
         actionButtons += [repair, transport, deep]
-        let card = NativeView.card(title: "Desktop Bridge", subtitle: "Single managed loopback runtime. HTTP and WebSocket upgrade/protocol/frame facts remain separate.", views: [providerStatus, bridgeServiceStatus, bridgeHttpStatus, bridgeWebSocketStatus, ControlKit.actionRow([repair, transport, deep])])
+        let card = NativeView.card(title: "Desktop Bridge", subtitle: "Local service and transport checks.", views: [providerStatus, bridgeServiceStatus, bridgeHttpStatus, bridgeWebSocketStatus, ControlKit.actionRow([repair, transport, deep])])
         card.setAccessibilityIdentifier("sks-provider-card-desktop-bridge")
         return card
     }
@@ -123,6 +198,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
 
     func setBusy(_ value: Bool) {
         busy = value
+        authPriorityToggle.isEnabled = !value && !authPriorityBusy && authPriorityEnabled != nil
         for button in actionButtons where !providerButtons.values.flatMap({ $0 }).contains(where: { $0 === button }) { button.isEnabled = !value }
         value ? globalSpinner.startAnimation(nil) : globalSpinner.stopAnimation(nil)
     }
@@ -135,6 +211,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
 
     func refresh() {
         refreshCredentialHealth()
+        refreshAuthPriority()
         processClient.run(["bridge", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self, let json = self.json(result.output),
                   let status = try? DesktopBridgeStatusV3Truth.decode(from: json),

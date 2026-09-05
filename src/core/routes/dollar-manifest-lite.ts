@@ -11,7 +11,7 @@ export interface DollarCommandAliasLiteEntry {
   app_skill: string;
 }
 
-const NARUTO_DESCRIPTION = '$Naruto is the lightweight Codex official subagent workflow and the default for non-trivial execution. The Sol Max parent dynamically scales useful independent children from a bounded four/six/eight starting policy up to the SKS-owned 256-child ceiling; max_threads is a cap, never a target. A measured lower Codex host cap or explicit provider/API budget remains authoritative. Capacity is the minimum of ready DAG width, disjoint ownership, verifier/tool capacity, available child slots, and positive marginal usefulness. Child routing is fixed to Luna Max mechanical, Sol High implementation, Sol Max judgment, and Terra Max long-context/Computer Use/Browser/ImageGen execution. Duplicate slices and overlapping writes are blocked; explicit --agents remains authoritative.';
+const NARUTO_DESCRIPTION = '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, preserve Luna/Astra child role models, and honor explicit counts and measured host limits. max_threads is a cap, never a target.';
 const COMPUTER_USE_DESCRIPTION = 'Maximum-speed Codex Computer Use lane for native macOS, desktop-app, OS-settings, and non-web visual tasks only. Browser, localhost, website, webapp, and web-based app verification must route through Codex Chrome Extension readiness first.';
 
 const DOLLAR_COMMANDS_LITE_BASE = [

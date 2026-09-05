@@ -18,7 +18,7 @@ import { PACKAGE_VERSION, packageRoot } from '../fsx.js';
 // global_install, the migration stages (including the desktop-bridge rows),
 // a home-rooted migration receipt, and a rollback pointer keyed by the home
 // path hash.
-async function updateFromHomeFixture(input: { seamDoctor: boolean }) {
+async function updateFromHomeFixture(input: { seamDoctor: boolean; alreadyCurrent?: boolean }) {
   const raw = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-from-home-'));
   const home = await fs.realpath(raw);
   const binDir = path.join(home, 'bin');
@@ -26,7 +26,7 @@ async function updateFromHomeFixture(input: { seamDoctor: boolean }) {
   const stateFile = path.join(home, 'installed-version.txt');
   const fakeNpm = path.join(home, 'npm-fake.mjs');
   await fs.mkdir(binDir, { recursive: true });
-  await fs.writeFile(stateFile, '1.10.0\n');
+  await fs.writeFile(stateFile, input.alreadyCurrent ? `${PACKAGE_VERSION}\n` : '1.10.0\n');
   await fs.writeFile(fakeNpm, `#!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
@@ -79,6 +79,7 @@ const firstArg = process.argv[2];
 if (firstArg === '--version' || firstArg === '-v' || firstArg === 'version') {
   process.stdout.write(${JSON.stringify(`sneakoscope ${PACKAGE_VERSION}\n`)});
 } else {
+  require('node:fs').appendFileSync(process.env.SKS_FAKE_DOCTOR_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
   import(${JSON.stringify(dispatch)}).then(({ runSks }) => runSks(process.argv.slice(2))).catch((err) => {
     console.error(err instanceof Error && err.stack ? err.stack : String(err));
     process.exitCode = 1;
@@ -93,6 +94,10 @@ const fs = require('node:fs');
 console.log('sneakoscope ' + fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8').trim());
 `);
   await fs.chmod(pathSks, 0o755);
+  if (input.alreadyCurrent) {
+    await fs.unlink(pathSks);
+    await fs.symlink(installedEntrypoint, pathSks);
+  }
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
@@ -100,6 +105,7 @@ console.log('sneakoscope ' + fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8
     SKS_GLOBAL_ROOT: path.join(home, '.sneakoscope-global'),
     SKS_MUTATION_LEDGER_ROOT: home,
     SKS_FAKE_NPM_LOG: log,
+    SKS_FAKE_DOCTOR_LOG: path.join(home, 'doctor-calls.jsonl'),
     SKS_FAKE_NPM_ROOT: home,
     SKS_FAKE_STATE: stateFile,
     SKS_FAKE_PATH_SKS: pathSks,
@@ -110,6 +116,7 @@ console.log('sneakoscope ' + fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8
     SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT: '1',
     SKS_UPDATE_SKIP_SKS_MENUBAR: '1',
     SKS_UPDATE_QUIET: '1',
+    SKS_POSTINSTALL_BOOTSTRAP: '1',
     ...(input.seamDoctor
       ? { SKS_TEST_DOCTOR_OK: '1', SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1' }
       : {})
@@ -201,6 +208,40 @@ test('update from home completes against the real new-version doctor', { timeout
     assertCompleteHomeUpdate(result, fixture.home, receipt);
     assert.equal(result.ok, true, result.error || JSON.stringify(result.stages));
     assert.equal(result.status, 'updated');
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousGlobalRoot === undefined) delete process.env.SKS_GLOBAL_ROOT;
+    else process.env.SKS_GLOBAL_ROOT = previousGlobalRoot;
+    await fixture.cleanup();
+  }
+});
+
+
+test('already-current update runs the real installed doctor once and verifies setup without reinstalling', { timeout: 240_000 }, async () => {
+  const fixture = await updateFromHomeFixture({ seamDoctor: false, alreadyCurrent: true });
+  const previousHome = process.env.HOME;
+  const previousGlobalRoot = process.env.SKS_GLOBAL_ROOT;
+  try {
+    process.env.HOME = fixture.home;
+    process.env.SKS_GLOBAL_ROOT = fixture.env.SKS_GLOBAL_ROOT;
+    const result = await runSksUpdateNow(fixture.options);
+    assert.equal(result.ok, true, result.error || JSON.stringify(result.stages));
+    assert.equal(result.status, 'current');
+    assert.equal(result.install_code, null);
+    assert.equal(result.old_version_doctor, null);
+    assert.equal(result.new_version_doctor?.entrypoint, fixture.env.SKS_FAKE_ENTRYPOINT);
+    assert.equal(result.project_receipt?.source, 'doctor-migration');
+    assert.equal(result.migration_current, true);
+    assert.equal(result.rollback.available, false);
+    assert.ok(result.verification.every((item) => item.ok), JSON.stringify(result.verification));
+    const calls = (await fs.readFile(fixture.env.SKS_FAKE_DOCTOR_LOG!, 'utf8')).trim().split('\n').map((row) => JSON.parse(row));
+    assert.equal(calls.filter((args) => args.includes('--fix')).length, 1);
+    assert.equal(calls.filter((args) => args[0] === 'doctor' && !args.includes('--fix')).length, 1);
+    const npmCalls = (await fs.readFile(fixture.env.SKS_FAKE_NPM_LOG!, 'utf8')).trim().split('\n').map((row) => JSON.parse(row));
+    assert.equal(npmCalls.filter((call) => call.args[0] === 'install').length, 0);
+    const operation = JSON.parse(await fs.readFile(result.operation_receipt_path!, 'utf8'));
+    assert.equal(operation.side_effects_started, true);
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;

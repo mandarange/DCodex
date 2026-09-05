@@ -128,7 +128,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
             views: [scroll, status, manageLabel, primary, stateActions, connectLabel, secondary, maintenance]
         )
         view = NativeView.page([
-            ControlKit.header("MCP Servers", "Inspect global, trusted-project, or effective configuration. Effective and plugin entries are read-only until an exact writable scope is selected. New authentication uses OAuth or environment-variable names only."),
+            ControlKit.header("MCP Servers", "Manage the tools available to Codex. Choose Global or Project to make changes; Effective shows the combined configuration."),
             scopeRow,
             inventoryCard
         ])

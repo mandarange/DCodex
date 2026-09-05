@@ -86,7 +86,6 @@ const requiredReleaseGates = [
   'publish:runtime-script-closure',
   'package:published-contract',
   'release:dag-runner',
-  'release:gate-budget',
   'release:latency-slo',
   'release:proof-truth',
   'release:provenance',

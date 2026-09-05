@@ -397,9 +397,17 @@ export function safeActiveRouteContinuation(command: CommandNameLite, args: read
       && (requestedMission === String(state.mission_id) || requestedMission === 'latest');
   }
   if (command === 'align') {
-    if (activeRoute !== 'ALIGN' || !['run', 'proof'].includes(subcommand)) return false;
-    const requestedMission = String(args[1] || '').trim();
-    return Boolean(state.mission_id) && requestedMission === String(state.mission_id);
+    if (!['run', 'proof'].includes(subcommand)) return false;
+    const requestedMission = firstPositionalAfterSubcommand(args);
+    if (activeRoute === 'ALIGN') {
+      return Boolean(state.mission_id)
+        && (!requestedMission || requestedMission === 'latest' || requestedMission === String(state.mission_id));
+    }
+    // `sks align run` is the repair command emitted by code/context freshness
+    // preflights. With no target it runs as route-state-neutral maintenance in
+    // the already-owned mission. Explicitly naming another mission still goes
+    // through the normal active-route gate.
+    return subcommand === 'run' && !requestedMission;
   }
   const expectedRoutes = new Map<CommandNameLite, readonly string[]>([
     ['research', ['RESEARCH']],
@@ -419,6 +427,14 @@ export function safeActiveRouteContinuation(command: CommandNameLite, args: read
   if (subcommand !== 'run') return false;
   const requestedMission = String(args[1] || '').trim();
   return Boolean(state.mission_id) && (requestedMission === String(state.mission_id) || requestedMission === 'latest');
+}
+
+function firstPositionalAfterSubcommand(args: readonly string[]): string {
+  for (const arg of args.slice(1)) {
+    const value = String(arg || '').trim();
+    if (value && !value.startsWith('-')) return value;
+  }
+  return '';
 }
 
 function optionValue(args: readonly string[], names: readonly string[]): string {

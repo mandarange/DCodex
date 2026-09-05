@@ -213,13 +213,22 @@ function activeSksSkillNames(state: any): string[] {
   return selectedSksSkillNamesForActiveState(state);
 }
 
-export async function activeAuthoritativeSksSkillRefresh(root: string, state: any) {
+export async function activeAuthoritativeSksSkillRefresh(
+  root: string,
+  state: any,
+  options: { includeContext?: boolean } = {}
+) {
   const skillNames = activeSksSkillNames(state);
   if (!skillNames.length) return { context: '', blocked: null };
   const admission = await authoritativeSksSkillAdmission(root, skillNames);
   if (admission.blocked) return { context: '', blocked: admission.blocked };
   return {
-    context: admission.resolution ? renderAuthoritativeSksSkillContext(admission.resolution) : '',
+    // PreToolUse still revalidates current files, but repeating the full path
+    // block after UserPromptSubmit/SessionStart adds no authority and consumes
+    // context on every tool call. Only lifecycle boundaries attach it.
+    context: options.includeContext && admission.resolution
+      ? renderAuthoritativeSksSkillContext(admission.resolution)
+      : '',
     blocked: null
   };
 }
@@ -239,7 +248,7 @@ export async function hookActiveSkillContextRefresh(
   const spawnCompatibility = officialSubagentsRequiredForPromptOrState(state, '', {})
     ? OFFICIAL_SUBAGENT_SPAWN_COMPATIBILITY_CONTEXT
     : '';
-  const refresh = await activeAuthoritativeSksSkillRefresh(root, state);
+  const refresh = await activeAuthoritativeSksSkillRefresh(root, state, { includeContext: true });
   if (refresh.blocked) {
     return {
       continue: true,

@@ -12,6 +12,7 @@ import {
   rollbackDesktopBridge,
   setDefaultProvider,
   setOfficialModelsMode,
+  setAuthPriority,
   unmanageDesktopBridge
 } from './desktop-controller-v3/lifecycle-commands.js';
 import {
@@ -51,6 +52,10 @@ export async function executeDesktopBridgeCommandV3(
   options: DesktopBridgeControllerV3Options = {}
 ): Promise<DesktopBridgeStatusV3 | DesktopCapabilityReportV3 | DesktopBridgeCommandResult> {
   if (request.operation === 'status') return desktopBridgeStatusV3(options);
+  if (request.operation === 'auth-priority.status') {
+    const status = await desktopBridgeStatusV3(options);
+    return commandResult('auth-priority.status', true, status, { auth_priority: status.auth_priority }, [], options);
+  }
   if (request.operation === 'verify') return verifyDesktopBridgeV3(request.level, options);
 
   try {
@@ -91,6 +96,7 @@ export async function executeDesktopBridgeCommandV3(
         return commandResult('route.list', true, status, { routing: status.routing }, [], options);
       }
       if (request.operation === 'route.set-default') return setDefaultProvider(request.provider_id, options);
+      if (request.operation === 'auth-priority.set') return setAuthPriority(request.enabled, options);
       if (request.operation === 'route.official-models') return setOfficialModelsMode(request.mode, options);
       if (request.operation === 'route.explain') return explainRoute(request.model, options);
       if (request.operation === 'unmanage') return unmanageDesktopBridge(options);

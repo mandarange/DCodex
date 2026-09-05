@@ -34,20 +34,20 @@ import {
 } from '../official-subagent-runner.js'
 import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../../codex-compat/codex-runtime-contract.js'
 
-test('standalone parent args launch one Sol Max Codex parent with the official thread budget', () => {
+test('standalone parent args launch one Astra Max Codex parent with the official thread budget', () => {
   const args = buildOfficialSubagentCodexArgs({
     prompt: 'delegate and wait',
     maxThreads: 12,
     parentSummaryFile: '/tmp/parent-summary.txt'
   })
-  assert.deepEqual(args.slice(0, 6), ['exec', '--json', '-m', 'gpt-5.6-sol', '-c', 'model_reasoning_effort="max"'])
+  assert.deepEqual(args.slice(0, 6), ['exec', '--json', '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort="max"'])
   assert.ok(args.includes('model_provider="openai"'))
   assert.ok(args.includes('forced_login_method="chatgpt"'))
   assert.ok(args.includes('agents.max_concurrent_threads_per_session=12'))
   assert.ok(args.includes('agents.max_depth=1'))
   assert.ok(args.includes('agents.enabled=true'))
   assert.ok(args.some((arg) => typeof arg === 'string' && arg.includes('features.multi_agent_v2=') && arg.includes('enabled=true')))
-  assert.ok(args.includes('agents.default_subagent_model="gpt-5.6-sol"'))
+  assert.ok(args.includes('agents.default_subagent_model="gpt-6-astra"'))
   assert.ok(args.includes('agents.default_subagent_reasoning_effort="high"'))
   assert.equal(args.filter((arg) => arg === 'exec').length, 1)
 })
@@ -173,7 +173,7 @@ test('fresh project config receives the official Codex subagent defaults', () =>
   assert.equal(parsed.agents.max_depth, 1)
   assert.equal(parsed.agents.enabled, true)
   assert.equal(parsed.agents.interrupt_message, true)
-  assert.equal(parsed.agents.default_subagent_model, 'gpt-5.6-sol')
+  assert.equal(parsed.agents.default_subagent_model, 'gpt-6-astra')
   assert.equal(parsed.agents.default_subagent_reasoning_effort, 'high')
   assert.equal(Object.hasOwn(parsed.agents, 'job_max_runtime_seconds'), false)
   assert.equal(Object.hasOwn(parsed.agents, 'max_threads'), false)
@@ -895,19 +895,19 @@ test('generated Naruto skill describes the official workflow and retired aliases
   assert.match(naruto, /later root-owned waves/)
   assert.match(naruto, /max_threads defaults to a 256-child frame budget cap, never a target/)
   assert.match(naruto, /max_depth=1 blocks nested delegation/)
-  assert.match(naruto, /Route tiny mechanical and mass shards to Luna Max, broad search and exploration shards to Terra Max, and implementation or judgment to Sol/)
+  assert.match(naruto, /Route tiny mechanical and mass shards to Luna Max, broad search and exploration shards to Astra Medium, implementation to Astra High, and judgment to Astra Max/)
   assert.match(naruto, /sks\.core-engineering-directive\.v1/)
   assert.match(naruto, /subagent-plan\.json/)
   assert.match(naruto, /subagent-parent-summary\.json/)
   assert.doesNotMatch(naruto, /GPT-5\.6 Sol Max|Browser\/Chrome/)
   assert.doesNotMatch(naruto, /verification-summary\.json|five-artifact/)
   assert.doesNotMatch(naruto, /native shadow-clone|up to 100|--backend codex-exec|--clones N/)
-  assert.match(agentsRules, /`\$sks-naruto` Codex official subagent workflow/)
+  assert.match(agentsRules, /Use `\$sks-naruto` for explicitly requested parallel work or concrete independent slices/)
   assert.match(agentsRules, /reuse capacity across root-owned waves/)
   assert.match(agentsRules, /Luna Max for tiny mechanical work/)
-  assert.match(agentsRules, /Sol High for implementation/)
-  assert.match(agentsRules, /Terra Max for read-heavy context/)
-  assert.match(agentsRules, /Sol Max only for focused judgment/)
+  assert.match(agentsRules, /Astra High for implementation/)
+  assert.match(agentsRules, /Astra Medium for read-heavy context/)
+  assert.match(agentsRules, /Astra Max only for focused judgment/)
   assert.doesNotMatch(agentsRules, /native agent intake agents|fresh executor team/)
   assert.doesNotMatch(agentsRules, /\$Team|sks team|\$MAD-DB|sks mad-db/)
   for (const name of ['team', 'mad-db', 'swarm', 'shadow-clone', 'kage-bunshin']) {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyCommand, classifySql, classifyToolPayload, evaluateDbSafety } from '../../dist/core/db-safety.js';
+import { activeMadSksSqlPlaneAllowsMutation } from '../../dist/core/mad-sks/sql-plane/policy.js';
 
 const sqlCases = [
   ['DROP TABLE users', 'destructive', 'drop_table'],
@@ -106,6 +107,76 @@ test('DB safety golden cases classify destructive and safe shapes', () => {
     if (reason) assert.ok(result.reasons.includes(reason), `${command} missing ${reason}`);
   }
   assert.ok(allSqlCases.length + allCommandCases.length >= 100);
+});
+
+test('JavaScript property deletion in the local test runner is not a SQL mutation', () => {
+  const command = [
+    "node --input-type=module - <<'JS'",
+    "const tests = ['dist/core/codex-control/model-metadata.test.js', 'dist/core/database-router.test.js'];",
+    'const env = {};',
+    'delete env.CODEX_HOME;',
+    'delete env.NODE_OPTIONS;',
+    'JS'
+  ].join('\n');
+
+  const direct = classifyCommand(command);
+  assert.equal(direct.level, 'none');
+
+  const payload = classifyToolPayload({
+    tool_name: 'exec_command',
+    tool_input: { command }
+  });
+  assert.equal(payload.level, 'none');
+  assert.equal(evaluateDbSafety({ classification: payload, duringNoQuestion: true }).action, 'allow');
+});
+
+test('actual database CLI invocations remain classified through shell sequencing and absolute paths', () => {
+  const chained = classifyCommand('cd /tmp && /usr/local/bin/psql -c "DELETE FROM users WHERE id = 1"');
+  assert.equal(chained.level, 'write');
+  assert.ok(chained.reasons.includes('delete_with_where'));
+
+  const directSql = classifyToolPayload({
+    tool_name: 'exec_command',
+    tool_input: { command: 'DELETE FROM users' }
+  });
+  assert.equal(directSql.level, 'destructive');
+
+  assert.equal(classifyCommand('supabase db reset --linked').level, 'destructive');
+  assert.equal(classifyCommand("sh -c 'supabase db reset --linked'").level, 'destructive');
+  for (const query of ['BEGIN; DELETE FROM users', 'SET ROLE app; DROP TABLE users']) {
+    const classification = classifyToolPayload({ tool_name: 'mcp__supabase__execute_sql', tool_input: { query } });
+    assert.equal(classification.level, 'destructive');
+    assert.equal(evaluateDbSafety({ classification, duringNoQuestion: false }).allowed, false);
+  }
+  for (const sql of ['DELETE FROM users;', 'BEGIN;\nDELETE FROM users;']) {
+    const classification = classifyCommand(`psql <<'SQL'\n${sql}\nSQL`);
+    assert.equal(classification.level, 'destructive');
+    assert.equal(evaluateDbSafety({ classification, duringNoQuestion: false }).allowed, false);
+  }
+  assert.equal(classifyCommand('psql <<-SQL\n\tSELECT 1;\n\tSQL').level, 'safe');
+  assert.equal(classifyCommand('psql <<SQL\nSELECT 1;\n\tSQL\n;\nDROP TABLE users;\nSQL').level, 'destructive');
+  assert.equal(classifyCommand('psql <<\\SQL\nDELETE FROM users;\nSQL').level, 'destructive');
+  for (const command of [
+    'psql <<SAFE <<SQL\nSELECT 1;\nSAFE\nDROP TABLE users;\nSQL',
+    'psql <<123\nDROP TABLE users;\n123'
+  ]) {
+    const classification = classifyCommand(command);
+    assert.equal(classification.level, 'destructive');
+    assert.ok(classification.reasons.includes('drop_table'));
+    assert.equal(evaluateDbSafety({ classification, duringNoQuestion: false }).allowed, false);
+  }
+
+  const unknownDatabaseTool = classifyToolPayload({
+    tool_name: 'mcp__database__custom_action',
+    tool_input: { input: 'perform the configured action' }
+  });
+  assert.equal(unknownDatabaseTool.level, 'possible_db');
+  assert.equal(evaluateDbSafety({ classification: unknownDatabaseTool, duringNoQuestion: true }).action, 'block');
+  assert.equal(evaluateDbSafety({ classification: unknownDatabaseTool, duringNoQuestion: false }).action, 'block');
+  assert.equal(activeMadSksSqlPlaneAllowsMutation(unknownDatabaseTool), false);
+  assert.equal(activeMadSksSqlPlaneAllowsMutation(classifyToolPayload({
+    tool_name: 'mcp__supabase__execute_sql', tool_input: { query: 'INSERT INTO audit_log (id) VALUES (1)' }
+  })), true);
 });
 
 test('Supabase MCP execute_sql allows read-only SELECT without MAD-SKS', () => {

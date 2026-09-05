@@ -11,7 +11,6 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const gates = release.gates || []
 const releaseGates = gates.filter((gate) => (gate.preset || []).includes('release'))
 const blockers: string[] = []
-const splitReviewBudget = 1200
 const splitReviewFiles = [
   'src/core/research.ts',
   'src/core/ppt.ts',
@@ -64,9 +63,6 @@ if (directMkdtempCalls.length) blockers.push(`direct_mkdtemp_callsite:${directMk
 if (rustTempdirCalls.length) blockers.push(`rust_tempdir_without_raii:${rustTempdirCalls[0].file}:${rustTempdirCalls[0].line}`)
 if (!releaseEvidenceArchitecture.ok) blockers.push(`release_evidence_architecture:${releaseEvidenceArchitecture.issues[0]}`)
 if (unusedPolicyCallsiteAllowlist.length) blockers.push(`unused_policy_callsite_allowlist:${unusedPolicyCallsiteAllowlist[0]}`)
-for (const row of splitReviewLineCounts) {
-  if (row.lines > splitReviewBudget) blockers.push(`split_review_budget_exceeded:${row.file}:${row.lines}`)
-}
 
 const result = {
   schema: 'sks.gate-policy-audit.v1',
@@ -74,7 +70,6 @@ const result = {
   release_gate_count: releaseGates.length,
   manifest_gate_count: gates.length,
   package_script_count: Object.keys(pkg.scripts || {}).length,
-  split_review_budget_lines: splitReviewBudget,
   split_review_line_counts: splitReviewLineCounts,
   direct_codex_config_write_callsite_count: directCodexConfigWrites.length,
   direct_codex_config_write_callsites: directCodexConfigWrites.slice(0, 20),

@@ -20,8 +20,8 @@ printf '%s' '<sks.subagent-parent-summary.v1 JSON>' \
 ```
 
 Automatic fan-out starts at four Naruto children for bounded non-trivial work, six for
-explicitly parallel work, eight for large-scale work, and sixteen for mass cheap-model
-fan-out on the Luna/Terra lanes. After decomposition the parent may resize either lane
+explicitly parallel work, eight for large-scale work, and sixteen for mass mechanical or exploration
+fan-out on the Luna/Astra Medium lanes. After decomposition the parent may resize either lane
 up to 256 children, but only when every additional slice is independent, useful, and
 verifiable. Explicit `--agents N` and
 `--max-threads N` values from 1 through 256 are authoritative and are not reduced to
@@ -33,9 +33,9 @@ time. A Codex multi-agent V2 host may count the root separately and therefore re
 active limiter and must be reported instead of being presented as SKS-selected 256
 concurrency. Remaining requested work reuses returned capacity in later waves.
 
-Luna Max handles tiny mechanical shards, Terra Max handles broad search and
-exploration shards, and Sol handles implementation and judgment. The GPT-5.6
-four-profile matrix (Luna / Terra / Sol High / Sol Max) is a **routing LOD**, not an
+Luna Max handles tiny mechanical shards, Astra Medium handles broad search and
+exploration shards, and Astra High and Max handle implementation and judgment. The
+four-profile matrix (Luna Max / Astra Medium / Astra High / Astra Max) is a **routing LOD**, not an
 agent-count cap.
 
 `SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` declares the provider/API
@@ -85,14 +85,14 @@ correlation and never grants project trust, so App host-capability requests requ
 
 | Lane | Model / effort | Assigned role |
 | --- | --- | --- |
-| Root orchestrator | Sol Max | DAG decomposition, contract finalization, integration, and final judgment |
-| Judgment lane | Sol Max | Architecture, debugging, security, database, release, and ambiguous work |
-| Implementation lane | Sol High | Ordinary UI, backend, logic, core, and native implementation |
-| Context/tool lane | Terra Max | Large documents, logs, long-term memory, repository exploration, rapid large-scale first-draft code processing, plus Browser, Computer Use, and image execution |
+| Root orchestrator | GPT-6 Astra Max (standalone default) | DAG decomposition, contract finalization, integration, and final judgment |
+| Judgment lane | Astra Max | Architecture, debugging, security, database, release, and ambiguous work |
+| Implementation lane | Astra High | Ordinary UI, backend, logic, core, and native implementation |
+| Context/tool lane | Astra Medium | Large documents, logs, long-term memory, repository exploration, rapid large-scale first-draft code processing, plus Browser, Computer Use, and image execution |
 | Mechanical lane | Luna Max | Tiny, short-context work with clear completion conditions and strong automatic verification |
 
 Mixed work is split when practical. If a slice cannot safely separate execution
-from judgment, Sol Max owns it. SKS never silently substitutes another model or
+from judgment, Astra Max owns it. SKS never silently substitutes another model or
 recreates a custom process scheduler when the selected official path is
 unavailable.
 
@@ -116,7 +116,7 @@ enabled = true
 max_concurrent_threads_per_session = 256
 max_depth = 1
 interrupt_message = true
-default_subagent_model = "gpt-5.6-sol"
+default_subagent_model = "gpt-6-astra"
 default_subagent_reasoning_effort = "high"
 ```
 

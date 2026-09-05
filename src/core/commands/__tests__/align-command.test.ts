@@ -10,9 +10,10 @@ import { buildCodeNavigationContextPack } from '../../triwiki/code-navigation-co
 import { CODE_PACK_SCHEMA, type CodePack } from '../../triwiki/code-pack.js';
 import { contextGraphStatus } from '../../triwiki/context-graph/store/graph-status.js';
 import {
-  architectureMapGraphExtractors,
+  alignGraphExtractors,
   codeNavigationGraphExtractors
 } from '../../triwiki/context-graph/extractors/index.js';
+import { contextIndexFreshness } from '../../triwiki/context-graph/store/index-freshness.js';
 import {
   inspectTriwikiAgentsMdBlocks,
   TRIWIKI_AGENTS_SCAN_LIMITS
@@ -304,6 +305,7 @@ test('align rebuilds a staged code-only exhaustive navigation index from a blank
       assert.equal(serialized.includes(hostile), false, `${hostile} leaked into code-only artifacts`);
     }
     assert.equal(meta.cacheKeyParts.sourcePolicy, 'workspace');
+    assert.equal(meta.inputHashes['.sneakoscope/wiki/context-pack.json'], undefined);
     assert.equal(contextPack.mode, 'repository_code_navigation_only');
     assert.equal(contextPack.index.exhaustive_artifact, '.sneakoscope/wiki/context-graph.json');
     assert.equal(manifest.source_files.some((file: any) => file.path === '.codex/managed-hooks/fixture-hook.sh'), true);
@@ -326,17 +328,31 @@ test('align rebuilds a staged code-only exhaustive navigation index from a blank
     const codeOnlyStatus = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
     assert.equal(codeOnlyStatus.status, 'stale');
     assert.ok(codeOnlyStatus.reasons.some((reason) => reason.includes('schema_revision') || reason === 'schema_revision_changed'));
-    const mapStatus = await contextGraphStatus(root, { extractors: architectureMapGraphExtractors() });
+    const mapStatus = await contextGraphStatus(root, { extractors: alignGraphExtractors() });
     // Fixture roots are often outside a clean git tree; accept fresh or git_state_unknown stale only.
     assert.ok(
       mapStatus.status === 'fresh' || mapStatus.reasons.includes('git_state_unknown'),
       mapStatus.reasons.join(',')
     );
     await write(root, 'docs/guide.md', 'CHANGED_DOC_STILL_NOT_AN_INDEX_INPUT\n');
-    const afterDocs = await contextGraphStatus(root, { extractors: architectureMapGraphExtractors() });
+    const afterDocs = await contextGraphStatus(root, { extractors: alignGraphExtractors() });
     assert.ok(
       afterDocs.status === 'fresh' || afterDocs.reasons.includes('git_state_unknown'),
       afterDocs.reasons.join(',')
+    );
+
+    const immediateIndexStatus = await contextIndexFreshness(root, { extractors: alignGraphExtractors() });
+    assert.ok(
+      immediateIndexStatus.status === 'fresh' || immediateIndexStatus.reasons.includes('git_state_unknown'),
+      immediateIndexStatus.reasons.join(',')
+    );
+    await fsp.appendFile(path.join(root, 'src/main.ts'), '\nexport const sourceChangedAfterAlign = true;\n');
+    const afterSourceEdit = await contextIndexFreshness(root, { extractors: alignGraphExtractors() });
+    assert.equal(afterSourceEdit.status, 'stale');
+    assert.ok(
+      afterSourceEdit.reasons.includes('source_hash_mismatch')
+        || afterSourceEdit.reasons.includes('dirty_fingerprint_changed'),
+      afterSourceEdit.reasons.join(',')
     );
 
     await fsp.appendFile(path.join(root, '.sneakoscope/wiki/code-navigation-manifest.json'), '\n');

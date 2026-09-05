@@ -966,7 +966,7 @@ export function buildNarutoGateResult(input: any) {
 }
 
 function observedParentModelMatchesPolicy(model: string) {
-  return model.toLowerCase() === NARUTO_PARENT_MODEL || /gpt[-_. ]?5\.6[-_. ]?sol|\bsol(?:\s+max)?\b/i.test(model)
+  return model.trim().toLowerCase() === NARUTO_PARENT_MODEL
 }
 
 export const NARUTO_MISSION_RUN_LOCK = '.naruto-run.lock'

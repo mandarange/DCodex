@@ -25,17 +25,15 @@ final class RemoteCodingViewController: NSViewController {
             title: "Paseo (recommended)",
             subtitle: "Run Codex from your desktop, phone, web browser, or terminal.",
             views: [
-                NativeView.detail(
-                    "Paseo is an independent open-source project. Sneakoscope does not install it, bundle its daemon, configure its authentication or relay, monitor it, or depend on it. Review Paseo's own documentation and security guidance before connecting devices."
-                ),
-                NativeView.row([websiteButton, docsButton])
+                NativeView.row([websiteButton, docsButton]),
+                NativeView.detail("Paseo is a separate, open-source app. Follow its setup and security guidance to connect your devices.")
             ]
         )
 
         view = NativeView.page([
             NativeView.title("Remote Coding"),
             NativeView.detail(
-                "For remote and cross-device coding, Sneakoscope recommends evaluating Paseo as a separate companion for Codex."
+                "Continue coding from another device."
             ),
             recommendation
         ])

@@ -950,6 +950,10 @@ export async function runPackageLocalDoctor(input: {
       error: `missing package-local sks entrypoint: ${entrypoint}`
     };
   }
+  // Reports use stable names across runs; never accept a previous process's
+  // success when this invocation exits without producing a fresh report.
+  const reportFile = reportFileFromArgs(args);
+  if (reportFile) await fsp.rm(reportFile, { force: true });
   const result = await runProcess(process.execPath, [entrypoint, ...args], {
     cwd,
     env: {
@@ -967,12 +971,12 @@ export async function runPackageLocalDoctor(input: {
     stderr: err?.message || String(err),
     timedOut: false
   }));
-  const reportFile = reportFileFromArgs(args);
   const parsed = reportFile
     ? await readJson(reportFile, null).catch(() => null)
     : parseDoctorJson((result as any).stdout);
   const parsedOk = typeof parsed?.ok === 'boolean' ? parsed.ok : null;
   const ok = (result as any).code === 0
+    && (result as any).timedOut !== true
     && (result as any).spawnRegistrationFailed !== true
     && (reportFile ? parsedOk === true : parsedOk !== false);
   const requiredBlockers = [...new Set([

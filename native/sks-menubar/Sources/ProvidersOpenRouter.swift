@@ -25,15 +25,16 @@ extension ProvidersViewController {
         providerButtons["openrouter"] = [orConfigure, orValidate, orToggle]
         actionButtons += [lbConfigure, lbValidate, lbToggle, orConfigure, orValidate, orToggle, codexSignIn]
         let card = NativeView.card(
-            title: "Provider Credentials",
-            subtitle: "Profiles coexist. Enable, disable, validate, rotate, or remove one credential without changing the other or Codex-owned ChatGPT OAuth.",
+            title: "Accounts",
+            subtitle: "Manage each connection independently.",
             views: [
-                NativeView.sectionTitle("Codex-LB"), codexLbKeychainStatus, cliProviderStatus,
+                NativeView.sectionTitle("Codex-LB"), cliProviderStatus,
                 ControlKit.actionRow([lbConfigure, lbValidate, lbToggle]),
-                NativeView.sectionTitle("OpenRouter"), openRouterKeychainStatus, openRouterCredentialStatus,
+                NativeView.sectionTitle("OpenRouter"), openRouterCredentialStatus,
                 ControlKit.actionRow([orConfigure, orValidate, orToggle]),
                 oauthCredentialStatus,
-                ControlKit.actionRow([codexSignIn])
+                ControlKit.actionRow([codexSignIn]),
+                NativeDisclosure("Credential details", views: [codexLbKeychainStatus, codexLbProfileDetails, openRouterKeychainStatus, openRouterProfileDetails])
             ]
         )
         card.setAccessibilityIdentifier("sks-provider-card-credentials")
@@ -52,7 +53,7 @@ extension ProvidersViewController {
         renderProviderProfile(providers["openrouter"] as? [String: Any], id: "openrouter", label: openRouterCredentialStatus)
         let identity = json["native_identity"] as? [String: Any]
         let identityState = identity?["state"] as? String ?? "not_attempted"
-        oauthCredentialStatus.stringValue = "ChatGPT OAuth Identity · \(identityState) · Codex-owned; never copied into provider profiles"
+        oauthCredentialStatus.stringValue = "ChatGPT · \(identityState == "verified" ? "Signed in through Codex" : "Sign-in not verified")"
         oauthCredentialStatus.textColor = identityState == "verified" ? .systemGreen : .secondaryLabelColor
     }
 
@@ -68,14 +69,22 @@ extension ProvidersViewController {
         let enabled = profile?["enabled"] as? Bool == true
         providerEnabled[id] = enabled
         let credentialState = credential["state"] as? String ?? "unavailable"
-        let endpoint = profile?["endpoint"] as? [String: Any]
-        let origin = ProviderSecretRedactor.redactEndpoint(endpoint?["origin_redacted"] as? String ?? "not configured")
-        let auth = endpoint?["auth_transport"] as? String ?? "unreported"
         let catalogState = catalog["state"] as? String ?? "failed"
-        let checked = credential["checked_at"] as? String ?? catalog["checked_at"] as? String ?? "never"
-        label.stringValue = "\(displayProvider(id)) · \(enabled ? "enabled" : "disabled") · credential \(credentialState) · endpoint \(origin) · auth \(auth) · catalog \(catalogState) · last \(checked)"
-        label.textColor = credentialState == "ready" && enabled ? .systemGreen
-            : ["rejected", "unavailable"].contains(credentialState) ? .systemRed : .systemOrange
+        let endpoint = profile?["endpoint"] as? [String: Any]
+        let details = id == "codex-lb" ? codexLbProfileDetails : openRouterProfileDetails
+        details.stringValue = "\(displayProvider(id)) · \(ProviderSecretRedactor.redactEndpoint(endpoint?["origin_redacted"] as? String ?? "not configured")) · auth \(endpoint?["auth_transport"] as? String ?? "unreported") · last checked \(credential["checked_at"] as? String ?? "never")"
+        let connected = enabled && credentialState == "ready"
+        label.stringValue = !enabled ? "Off · enable to use this connection"
+            : connected ? "Connected · catalog \(catalogState.replacingOccurrences(of: "_", with: " "))"
+            : "Needs attention · credential \(credentialState.replacingOccurrences(of: "_", with: " "))"
+        label.textColor = !enabled ? .secondaryLabelColor : connected ? .systemGreen : .systemOrange
+        providerButtons[id]?.first?.title = connected ? "Reconnect…" : "Connect…"
+        providerButtons[id]?.first?.setAccessibilityLabel("\(connected ? "Reconnect" : "Connect") \(displayProvider(id))")
+        if let toggle = providerButtons[id]?.last {
+            toggle.title = enabled ? "Disable" : "Enable"
+            toggle.setAccessibilityLabel("\(toggle.title) \(displayProvider(id))")
+        }
+
     }
 
     @objc func configureCodexLbProfile() {

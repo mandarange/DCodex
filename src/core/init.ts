@@ -8,15 +8,13 @@ import { isHarnessSourceProject, writeHarnessGuardPolicy } from './harness-guard
 import { repairSksGeneratedArtifacts } from './harness-conflicts.js';
 import { disableVersionGitHook } from './version-manager.js';
 import { coreEngineeringDirectiveReferenceText, coreEngineeringDirectiveText } from './lean-engineering-policy.js';
-import { OFFICIAL_SUBAGENT_REVIEW_POLICY_TEXT } from './official-subagent-review-policy.js';
-import { AWESOME_DESIGN_MD_REFERENCE, CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_COMMAND_ALIASES, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, GETDESIGN_REFERENCE, IMAGEGEN_SOCIAL_SOURCE_POLICY, LEGACY_DOLLAR_SKILL_NAMES, OPENAI_CHATGPT_IMAGES_2_DOC_URL, OPENAI_GPT_IMAGE_2_MODEL_DOC_URL, OPENAI_IMAGE_GENERATION_DOC_URL, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_DESIGN_REFERENCES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, RESERVED_CODEX_PLUGIN_SKILL_NAMES, SOLUTION_SCOUT_SKILL_NAME, chatCaptureIntakeText, context7ConfigToml, getdesignReferencePolicyText, imageUxReviewPipelinePolicyText, outcomeRubricPolicyText, pptPipelineAllowlistPolicyText, prefixKnownSksDollarReferences, productDesignPluginPolicyText, sksPrefixedDollarCommand, speedLanePolicyText, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.js';
-import { SKILL_DREAM_POLICY, skillDreamPolicyText } from './skill-forge.js';
+import { DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, LEGACY_DOLLAR_SKILL_NAMES, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_DESIGN_REFERENCES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, context7ConfigToml, prefixKnownSksDollarReferences, sksPrefixedDollarCommand, triwikiContextTracking } from './routes.js';
+import { SKILL_DREAM_POLICY } from './skill-forge.js';
 import { CODEX_HOOK_EVENT_STATE_KEYS } from './codex-compat/codex-hook-events.js';
 import { MANAGED_CODEX_FEATURE_FLAGS, REMOVED_CODEX_FEATURE_FLAGS } from './codex/codex-feature-flags.js';
 import { writeCodexConfigGuarded } from './codex/codex-config-guard.js';
 import { codexCommandHookCurrentHash } from './codex-hooks/codex-hook-hash.js';
-import { buildSksCoreSkillManifest, isCoreSkillName, legacyCoreSkillNames } from './codex-native/core-skill-manifest.js';
-import { syncCoreSkillsIntegrity } from './codex-native/core-skill-integrity.js';
+import { legacyCoreSkillNames } from './codex-native/core-skill-manifest.js';
 import { AUTHORITATIVE_SKS_SKILL_ROOT_REFERENCE } from './codex-native/sks-skill-paths.js';
 import { currentGeneratedFileInventory, installCodexAgents, pruneStaleGeneratedFiles, REMOVED_SKS_SKILL_NAMES } from './init/skills.js';
 import { reconcileManagedSkillInstallation } from './init/managed-skill-install.js';
@@ -33,7 +31,6 @@ import {
 import { escapeRegExp } from './text/regex.js';
 export { installGlobalSkills, installProjectSkills, installSkills } from './init/skills.js';
 
-const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
 const REMOVED_SKILL_TOKENS = new Set(REMOVED_SKS_SKILL_NAMES.map((name) => name.replace(/[^a-z0-9]/g, '')));
 
 function removedSkillSurface(value: any) {
@@ -50,11 +47,6 @@ function currentDollarSkillNames() {
   return DOLLAR_SKILL_NAMES.filter((name: any) => !removedSkillSurface(name));
 }
 
-function currentDollarCommandAliases() {
-  return DOLLAR_COMMAND_ALIASES
-    .filter((entry: any) => !removedSkillSurface(entry.canonical) && !removedSkillSurface(entry.app_skill))
-    .map((entry: any) => ({ ...entry, canonical: sksPrefixedDollarCommand(entry.canonical) }));
-}
 const SKS_GENERATED_GIT_PATTERNS = [
   '.sneakoscope/missions/',
   '.sneakoscope/reports/',
@@ -137,10 +129,6 @@ export function assertCodexWarningSuppressed(text: any = '', label: any = 'Codex
   if (!hasCodexUnstableFeatureWarningSuppression(text)) {
     throw new Error(`selftest: ${label} missing suppress_unstable_features_warning`);
   }
-}
-
-function reflectionInstructionText(commandPrefix: any = 'sks') {
-  return `Post-route reflection: full routes load \`reflection\` after work/tests and before final; DFix/Answer/Help/Wiki/SKS discovery are exempt. Write reflection.md; record only real misses/gaps, or no_issue_acknowledged. For lessons, append TriWiki claim rows to ${REFLECTION_MEMORY_PATH}. Run "${commandPrefix} wiki refresh" or pack, validate, then pass reflection-gate.json.`;
 }
 
 export function normalizeInstallScope(scope: any = 'global') {
@@ -321,12 +309,15 @@ const AGENTS_BLOCK = [
   '## Execution',
   '',
   '- Codex native `/goal` is the only persisted goal owner. Goal objectives must state the outcome, scope, constraints, verification, done-when conditions, stop conditions, and non-goals.',
-  '- General code-changing work uses the `$Naruto` Codex official subagent workflow; Answer and genuinely tiny DFix work stay lightweight.',
+  '- General work stays parent-owned. Use `$Naruto` for explicitly requested parallel work or concrete independent slices that benefit from delegation; Answer and tiny DFix work stay lightweight.',
   '- The parent owns decomposition, integration, verification, and the final answer. Delegate only independent slices with disjoint write scopes, reuse capacity across root-owned waves, and never nest subagents.',
-  '- Route model by the slice: Luna Max for tiny mechanical work, Sol High for implementation, Terra Max for read-heavy context or direct tool operation, and Sol Max only for focused judgment, risk, or final review.',
+  '- Route model by the slice: Luna Max for tiny mechanical work, Astra High for implementation, Astra Medium for read-heavy context or direct tool operation, and Astra Max only for focused judgment, risk, or final review.',
+  '- Preserve the user-selected parent model, reasoning effort, and service tier. SKS-launched Naruto defaults to GPT-6 Astra; changing the parent does not replace the child role models.',
   '- Codex 0.145 spawn compatibility: a full-history fork (`fork_turns="all"`, including the omitted/default mode) inherits the parent agent type, model, and reasoning effort. When selecting a custom `agent_type` or overriding `model`/`reasoning_effort`, use `fork_turns="none"` or a positive bounded turn count and carry the complete bounded slice contract in `message`; use full history only with those overrides omitted.',
   '- Route-specific skills own route-specific details. Do not inject unrelated Design, PPT, image, browser, research, DB, or release policy into ordinary work.',
   '- Do not stop at a plan when implementation was requested. Finish and verify, or report a concrete hard blocker.',
+  '- User instructions outrank skill guidance. Infer routine details, honor authorization already provided, and finish authorized preparation before asking for a decision that changes scope or has irreversible effects.',
+  '- Run checks proportionate to the changed behavior. After they pass, repeat or broaden only for new changes, failures, or unresolved risks.',
   '',
   '## Evidence And Context',
   '',
@@ -1188,14 +1179,13 @@ export function codexAppQuickReference(scope: any, commandPrefix: any) {
     coreEngineeringDirectiveReferenceText(),
     'dollar-commands:',
     ...currentDollarCommands().map((c: any) => `- \`${sksPrefixedDollarCommand(c.command)}\`: ${c.route}`),
-    `Picker skills: ${currentDollarCommandAliases().map((x: any) => x.app_skill).join(', ')}.`,
-    'Routing: Answer is read-only, DFix is tiny and lightweight, and general code-changing work uses Naruto with official Codex subagent threads and parent-owned integration.',
+    'Routing: Answer is read-only, DFix handles tiny edits, and general work stays parent-owned. Use Naruto for explicit parallel work or independent slices that benefit from delegation.',
     'Subagent context: Codex 0.145 full-history forks (`fork_turns="all"`, including the default) inherit agent type/model/reasoning. Custom `agent_type` or model/reasoning overrides must use `fork_turns="none"` or a positive bounded turn count, with the complete bounded slice contract in `message`.',
     'Goal: Codex native /goal is the only persisted goal owner; no SKS Goal mission, bridge, compatibility loop, or fallback state is allowed.',
     `Context: use bounded TriWiki recall, refresh after material changes, validate before handoff/final, and use Context7 or official vendor docs when external contracts or versions matter.`,
-    `Full routes write reflection.md, record only real lessons to ${REFLECTION_MEMORY_PATH}, then finish with a completion summary and Honest Mode.`,
+    'Completion: report the result, actual verification, and remaining gaps once. Reflection and Honest Mode are optional unless explicitly requested or required by the strict profile.',
     `Runtime root: ${commandPrefix} root reports the active project or global runtime root.`,
-    `Guard: generated harness files are immutable outside the engine source repo; conflicts require ${commandPrefix} conflicts prompt plus human approval.`,
+    `Guard: generated harness files are immutable outside the engine source repo; resolve conflicts with ${commandPrefix} conflicts cleanup --yes when authorized.`,
     'Publishing, deployment, live database mutation, destructive actions, and other irreversible external effects require explicit scoped authorization.'
   ].join('\n') + '\n';
 }

@@ -5,6 +5,8 @@ import { exists, readText } from '../../fsx.js';
 import type { BridgeProviderId, DesktopBridgeCommandResult, DesktopCapabilityReportV3 } from '../bridge-contracts.js';
 import {
   bootstrapExistingDesktopBridgeService,
+  defaultDesktopBridgeServiceSettings,
+  writeDesktopBridgeServiceSettings,
   desktopBridgeServicePaths,
   desktopBridgeServiceStatus,
   installAndStartDesktopBridgeService,
@@ -132,12 +134,11 @@ export async function setOfficialModelsMode(
     base_url: persisted?.official_passthrough?.base_url || DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL,
     models: mode,
   };
-  const effective = mode === 'auto'
-    ? await resolveEffectiveOfficialModelsMode(nextOfficial, {
+  const effective = await resolveEffectiveOfficialModelsMode(nextOfficial, {
       home: core.paths.home,
+      authPriorityEnabled: persisted?.auth_priority_enabled === true,
       codexLbRegistered: core.registry.profiles['codex-lb'].enabled && core.registry.profiles['codex-lb'].state === 'ready',
-    })
-    : mode;
+    });
   const policy = effective === 'passthrough'
     ? applyOfficialModelPassthrough(core.policy, { mode: 'passthrough', changedAt: nowIso(options) })
     : buildBridgeRoutingPolicy({
@@ -163,6 +164,34 @@ export async function setOfficialModelsMode(
     [],
     options
   );
+}
+
+export async function setAuthPriority(
+  enabled: boolean,
+  options: DesktopBridgeControllerV3Options
+): Promise<DesktopBridgeCommandResult> {
+  const core = await loadCore(options);
+  const settingsPath = options.settingsPath || desktopBridgeServicePaths(core.paths.home).settings_path;
+  const persisted = await readDesktopBridgeServiceSettings(settingsPath);
+  const nextSettings = { ...(persisted || defaultDesktopBridgeServiceSettings()), auth_priority_enabled: enabled };
+  if (core.policy && core.activeCatalog.ok) {
+    const effective = await resolveEffectiveOfficialModelsMode(nextSettings.official_passthrough, {
+      home: core.paths.home,
+      authPath: core.paths.authPath,
+      authPriorityEnabled: enabled,
+      codexLbRegistered: core.registry.profiles['codex-lb'].enabled && core.registry.profiles['codex-lb'].state === 'ready',
+    });
+    const policy = applyOfficialModelPassthrough(core.policy, { mode: effective, changedAt: nowIso(options) });
+    await writeBridgeRoutingPolicy(core.paths.routePolicyPath, policy, core.activeCatalog.route_index);
+    await persistRuntimeSettings({ ...core, policy, policyBlockers: [] }, {
+      ...options, settings: { ...(options.settings || {}), auth_priority_enabled: enabled },
+    });
+  } else {
+    // Saving a preference does not configure credentials or install a service.
+    await writeDesktopBridgeServiceSettings(settingsPath, nextSettings);
+  }
+  const status = await desktopBridgeStatusV3(options);
+  return commandResult('auth-priority.set', true, status, { auth_priority: status.auth_priority }, [], options);
 }
 
 export async function explainRoute(

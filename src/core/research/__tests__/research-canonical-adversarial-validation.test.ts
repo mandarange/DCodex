@@ -8,7 +8,7 @@ import { recordSubagentEvent, writeSubagentEvidence } from '../../subagents/suba
 import { buildResearchReviewArtifactDigest } from '../research-review-artifact-digest.js'
 import { writeVerifiedSuperSearchFixture } from './research-source-evidence-fixture.js'
 
-const personas = ['einstein', 'von_neumann', 'skeptic']
+const personas = ['evidence', 'method', 'falsification']
 
 test('canonical Research gate validates three lifecycle-correlated official reviewer threads', async () => {
   const fixture = await writeCanonicalFixture()
@@ -83,7 +83,6 @@ async function writeCanonicalFixture() {
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: { exclamation: 'Eureka!', idea: 'A bounded source-linked insight.', source_ids: [`source-${index + 1}`] },
     falsifiers: ['Remove the cited source.'],
     cheap_probes: ['Re-run the evidence check.'],
     confidence: 'high',
@@ -126,12 +125,12 @@ async function writeCanonicalFixture() {
     reviewer_count_required: personas.length, reviewer_count_observed: personas.length, review_cycles: 1, revision_cycles: 0,
     review_artifacts: reviewArtifacts, review_artifact_bundle_sha256: reviewArtifacts.bundle_sha256,
     current_artifact_bundle_sha256: reviewArtifacts.bundle_sha256, review_artifact_hashes_ok: true,
-    all_reviewers_approved: true, unresolved_critical_objections: 0, unresolved_objections: 0, honest_mode_ok: true,
-    genius_level_guaranteed: false, novelty_guaranteed: false, publication_acceptance_guaranteed: false, blockers: []
+    unresolved_critical_objections: 0, unresolved_major_objections: 0, unresolved_material_objections: 0, advisory_objections: 0, honest_mode_ok: true,
+    novelty_guaranteed: false, publication_acceptance_guaranteed: false, blockers: []
   }))
   await fsp.writeFile(path.join(dir, 'research-honest-mode.json'), JSON.stringify({
     schema: 'sks.research-honest-mode.v1', checked_at: reviewedAt, execution_class: 'real', ok: true,
-    guarantees: { genius_level: false, novelty: false, breakthrough: false, publication_acceptance: false }, blockers: []
+    guarantees: { novelty: false, breakthrough: false, publication_acceptance: false }, blockers: []
   }))
   return { dir, parent }
 }

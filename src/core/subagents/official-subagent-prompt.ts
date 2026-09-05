@@ -1,3 +1,4 @@
+import { NARUTO_PARENT_MODEL, NARUTO_PARENT_EFFORT } from './model-policy.js'
 import { HARD_NARUTO_MAX_THREADS, type SubagentCapacityController } from './thread-budget.js'
 import type { BoundedTriwikiAttention } from './triwiki-attention.js'
 import { coreEngineeringDirectiveReferenceText } from '../lean-engineering-policy.js'
@@ -105,7 +106,7 @@ export function buildOfficialSubagentPrompt(input: {
       : inheritActiveMainOntoChildren && activeMainModel
         ? `pass the exact active main model=${JSON.stringify(activeMainModel.model)} and reasoning_effort=${JSON.stringify(sealedReasoning)} when spawning this role; the current app session already owns provider=${JSON.stringify(activeMainModel.provider)}`
         : sealedModel
-          ? `pass model=${JSON.stringify(sealedModel)} and reasoning_effort=${JSON.stringify(sealedReasoning)} from the sealed role policy; do not replace Luna/Terra/Sol High/Sol Max with the parent active main model`
+          ? `pass model=${JSON.stringify(sealedModel)} and reasoning_effort=${JSON.stringify(sealedReasoning)} from the sealed role policy; do not replace Luna Max/Astra Medium/Astra High/Astra Max with the parent active main model`
           : 'omit model/reasoning overrides and preserve the installed custom-agent default'
 
     return [
@@ -138,7 +139,7 @@ Host capability policy:
 - Slack delivery is ACAS-runtime-only, never a model tool
 
 Subagent rules:
-- parent model policy: ${activeMainModel ? `keep the current app-selected main model ${activeMainModel.provider}:${activeMainModel.model}` : 'gpt-5.6-sol with max reasoning'}
+- parent model policy: ${activeMainModel ? `keep the current app-selected main model ${activeMainModel.provider}:${activeMainModel.model}` : `${NARUTO_PARENT_MODEL} with ${NARUTO_PARENT_EFFORT} reasoning`}
 - use only Codex official subagent threads; do not launch shell workers, a custom scheduler, a worker pool, or model fanout
 - select the narrowest matching project custom agent by its description; the custom agent name is the spawn type
 - custom \`agent_type\` selection and spawn-time \`model\`/\`reasoning_effort\` overrides must use \`fork_turns="none"\` or a positive bounded turn count, with the complete bounded slice contract in \`message\`; context contract: pass fork_turns="none" for listed slices
@@ -147,12 +148,12 @@ Subagent rules:
 - full history is valid only when all three overrides are omitted
 ${spawnModelRouting}
 - use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
-- use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
-- use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
-- use gpt-5.6-terra with max reasoning for long context/memory, large docs/repository reads or exploration, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image generation
-- explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
-- in mass fan-out, use worker/Luna Max for tiny mechanical shards and explorer/Terra Max for broad exploration; reserve Sol for implementation/judgment
-- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches
+- use gpt-6-astra with high reasoning for ordinary UI, logic, backend, and native implementation
+- use gpt-6-astra with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
+- use gpt-6-astra with medium reasoning for long context/memory, large docs/repository reads or exploration, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image generation
+- explicit task class and phase win over incidental keywords: Astra Medium gathers/explores/searches broadly, Luna handles tiny mechanical edits, Astra High implements, and Astra Max performs the focused judgment pass
+- in mass fan-out, use worker/Luna Max for tiny mechanical shards and explorer/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment
+- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; preserve each sealed role model and effort instead of applying the parent profile to every child
 
 Plan and capacity:
 - automatic fan-out is capacity-derived up to ${MAX_AUTOMATIC_SUBAGENT_COUNT}: after decomposition, use every safe useful child slot supported by the ready DAG, disjoint ownership, verifier/tool capacity, and actual host limits; the historical 4/6/8/16 task-class values are fallback hints, not clamps
@@ -290,20 +291,20 @@ function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null)
   const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
   const precedence = inheritActiveMain
     ? '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
-    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Max / Sol High / Sol Max) -> installed custom-agent default'
+    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Astra Medium / Astra High / Astra Max) -> installed custom-agent default'
   const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
   if (!activeMainModel) {
     return [
       roleOverride,
-      '- otherwise pass the selected role\'s sealed model/effort; do not default every child to Sol'
+      '- otherwise pass the selected role\'s sealed model/effort'
     ].join('\n')
   }
   if (!inheritActiveMain) {
     return [
       precedence,
       roleOverride,
-      `- parent keeps the app-selected main model ${activeMainModel.provider}:${activeMainModel.model}, but children must keep sealed Luna/Terra/Sol High/Sol Max role profiles`,
-      '- for every role without a user override, including slices created after parent decomposition, pass that role\'s sealed model and reasoning_effort; never replace Luna or Terra with the parent Sol model'
+      `- parent keeps the app-selected main model ${activeMainModel.provider}:${activeMainModel.model}, but children must keep sealed Luna Max/Astra Medium/Astra High/Astra Max role profiles`,
+      '- for every role without a user override, including slices created after parent decomposition, pass that role\'s sealed model and reasoning_effort; never replace a sealed role profile with the parent profile'
     ].join('\n')
   }
   return [

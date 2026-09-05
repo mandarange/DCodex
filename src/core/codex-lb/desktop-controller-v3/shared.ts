@@ -206,6 +206,7 @@ export function serializedSettings(settings: DesktopBridgeServiceSettings): stri
     idle_timeout_ms: settings.idle_timeout_ms,
     // Dropping this field here silently erased a pinned official-models
     // choice on the next catalog sync — the durability the setting exists for.
+    auth_priority_enabled: settings.auth_priority_enabled ?? false,
     official_passthrough: settings.official_passthrough
   }, null, 2)}\n`;
 }

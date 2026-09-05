@@ -57,6 +57,7 @@ const WIKI_CONTEXT_EXCLUDED = new Set([
   'context-graph.meta.json',
   'context-graph.prev.json',
   'context-graph-events.jsonl',
+  'code-navigation-manifest.json',
   'context-pack.json',
   'code-pack.json',
   'code-pack.prev.json'
@@ -83,7 +84,7 @@ const WIKI_CONTEXT_GIT_EXCLUDED = new Set(
  * with the v1 file — which is the clearest sign the rule was matching the wrong
  * thing.
  */
-const WIKI_CONTEXT_EXCLUDED_DIRS: readonly string[] = Object.freeze(['context-graph/']);
+const WIKI_CONTEXT_EXCLUDED_DIRS: readonly string[] = Object.freeze(['context-graph/', 'architecture-map/']);
 
 /** True when a wiki-relative path is a graph artifact, by name or by subtree. */
 function isExcludedWikiPath(relative: string, exclude: ReadonlySet<string>): boolean {
@@ -275,9 +276,14 @@ export async function readContextGraphGitState(root: string): Promise<ContextGra
   // committed the generation store before it was gitignored would otherwise
   // report `dirty` forever on an artifact it regenerates on every compile.
   const relevantTracked = tracked.filter(
-    (relative) => !WIKI_CONTEXT_GIT_EXCLUDED.has(relative) && !isExcludedWikiPath(relative, WIKI_CONTEXT_EXCLUDED)
+    (relative) => !WIKI_CONTEXT_GIT_EXCLUDED.has(relative)
+      && !(relative.startsWith(`${WIKI_CONTEXT_DIR}/`) && isExcludedWikiPath(relative, WIKI_CONTEXT_EXCLUDED))
   );
-  const relevantUntracked = untracked.filter(isRelevant);
+  const relevantUntracked = untracked.filter(
+    (relative) => isRelevant(relative)
+      && !WIKI_CONTEXT_GIT_EXCLUDED.has(relative)
+      && !(relative.startsWith(`${WIKI_CONTEXT_DIR}/`) && isExcludedWikiPath(relative, WIKI_CONTEXT_EXCLUDED))
+  );
   return {
     state: relevantTracked.length === 0 && relevantUntracked.length === 0 ? 'clean' : 'dirty',
     head: headSha,

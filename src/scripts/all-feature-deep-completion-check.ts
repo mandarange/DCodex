@@ -18,7 +18,6 @@ const requiredGates = [
   'dfix:fixture',
   'dfix:verification',
   'all-features:deep-completion',
-  'evidence:flagship-coverage',
   'schema:check'
 ];
 

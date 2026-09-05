@@ -5,7 +5,8 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
     private let operations: OperationCoordinator
     private let status = NativeView.detail("Diagnostics are idle.")
     private let codexGuidance = NativeView.detail("Codex CLI: prefer the latest channel. Use Updates → Update Codex CLI when status reports an update.")
-    private var busy = false
+    private var actionButtons: [NSButton] = []
+    private var busy = false { didSet { actionButtons.forEach { $0.isEnabled = !busy } } }
 
     init(processClient: ProcessClient, operations: OperationCoordinator) {
         self.processClient = processClient
@@ -17,7 +18,7 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
     override func loadView() {
         let healthCard = NativeView.card(
             title: "Health checks",
-            subtitle: "Doctor verifies and repairs the local SKS, Codex, and provider configuration.",
+            subtitle: "Check local SKS and Codex health, then review the result.",
             views: [status, NativeView.row([
                 ControlKit.primaryButton("Run Doctor", target: self, action: #selector(doctor), isDefault: true),
                 NativeView.button("Open Last Log", target: self, action: #selector(openLog))
@@ -36,9 +37,14 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
             views: [NativeView.row([NativeView.button("Restart Menu Bar", target: self, action: #selector(restart))])]
         )
         view = NativeView.page([
-            ControlKit.header("Diagnostics", "Diagnostic output is bounded, redacted, and written with owner-only permissions. Use this page when another Center action reports a blocker. Feature routes that need newer Codex fail with an update CTA instead of locking all of SKS."),
-            healthCard, codexCard, menuBarCard
+            ControlKit.header("Diagnostics", "Find and resolve local setup issues. Logs are redacted."),
+            healthCard, NativeDisclosure("More maintenance actions", views: [codexCard, menuBarCard])
         ])
+        func collectButtons(_ root: NSView) {
+            if let button = root as? NSButton { actionButtons.append(button) }
+            root.subviews.forEach(collectButtons)
+        }
+        [healthCard, codexCard, menuBarCard].forEach(collectButtons)
     }
 
     func refreshOnAppear() {
@@ -69,6 +75,7 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
     }
 
     @objc private func doctor() {
+        guard !busy else { return }
         busy = true
         status.stringValue = "Doctor is running…"
         processClient.run(["doctor", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
@@ -140,6 +147,7 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
     }
 
     @objc private func restart() {
+        guard !busy else { return }
         busy = true
         status.stringValue = "Restarting Menu Bar…"
         processClient.run(["menubar", "restart", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in

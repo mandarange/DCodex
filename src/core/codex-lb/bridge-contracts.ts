@@ -347,7 +347,14 @@ export interface DesktopCapabilityReportV3 {
   catalog_sync: CombinedCatalogSyncStatus;
 }
 
+export interface BridgeAuthPriorityStatus {
+  enabled: boolean;
+  state: 'off' | 'active' | 'unavailable';
+  error: string | null;
+}
+
 export interface DesktopBridgeStatusV3 {
+  auth_priority?: BridgeAuthPriorityStatus;
   schema: 'sks.desktop-bridge-status.v3';
   checked_at: string;
   correlation_id: string;
@@ -400,6 +407,8 @@ export interface DesktopBridgeStatusV3 {
 
 export type DesktopBridgeCommandOperation =
   | 'status'
+  | 'auth-priority.status'
+  | 'auth-priority.set'
   | 'ensure'
   | 'repair'
   | 'provider.list'

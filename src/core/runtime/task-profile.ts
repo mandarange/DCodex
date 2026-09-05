@@ -45,7 +45,7 @@ const PARALLEL_CUE_RE =
   /\b(parallel|subagents?|one agent per|fan out|independent slices?|naruto)\b|병렬|하위\s*에이전트|서브\s*에이전트|나루토|분담/i
 
 const CHANGE_RE =
-  /\b(fix|implement|implementation|change|edit|add|remove|delete|drop|modify|refactor|build|create|write|update|rename|rewrite|patch|apply|execute|repair|resolve|solve|publish|release|deploy|migrate)\b|\bwork\s+on\b|고쳐|고치|수정|변경|추가|삭제|구현|리팩터|작성|생성|만들어|업데이트|적용|실행|해결|이름\s*변경|배포|출시|마이그레이션/i
+  /\b(fix|implement|implementation|change|edit|add|remove|delete|drop|modify|refactor|simplify|optimi[sz]e|improve|build|create|write|update|rename|rewrite|patch|apply|execute|repair|resolve|solve|publish|release|deploy|migrate)\b|\bwork\s+on\b|고쳐|고치|수정|변경|추가|삭제|제거|최적화|개선|단순화|정리|구현|리팩터|작성|생성|만들어|업데이트|적용|실행|해결|이름\s*변경|배포|출시|마이그레이션/i
 
 const BOUNDED_READ_WORK_RE =
   /\b(audit|review|inspect|analy[sz]e|diagnose|trace|map|verify|test|check|investigate|evaluate)\b|감사|검토|점검|분석|진단|추적|매핑|검증|테스트|조사|평가/i

@@ -4,7 +4,7 @@ Research and AutoResearch now use Super Search for evidence acquisition and the 
 
 ## Official Research Reviewers
 
-Three composite, persona-inspired Sol Max lenses independently attack the manuscript through the project-scoped `research_reviewer` custom agent. The lenses combine first-principles explanation and experiment design, formal systems and adversarial strategy, and counterevidence and base-rate scrutiny. Their structured thread outcomes are stored in `research-adversarial-review.json`; bounded revisions are recorded in `research-revision-ledger.json`; convergence is recorded in `research-adversarial-convergence.json`.
+Three composite, persona-inspired Astra Max lenses independently attack the manuscript through the project-scoped `research_reviewer` custom agent. The lenses combine first-principles explanation and experiment design, formal systems and adversarial strategy, and counterevidence and base-rate scrutiny. Their structured thread outcomes are stored in `research-adversarial-review.json`; bounded revisions are recorded in `research-revision-ledger.json`; convergence is recorded in `research-adversarial-convergence.json`.
 
 `agent-ledger.json`, `debate-ledger.json`, and `genius-opinion-summary.md` are compatibility projections derived from those structured outcomes. They no longer create synthetic unanimous consensus.
 

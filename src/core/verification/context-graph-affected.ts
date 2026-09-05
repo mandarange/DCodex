@@ -564,8 +564,8 @@ export function contextGraphAffectedVerificationFromIndex(reader: ContextIndexRe
 /**
  * Gate names the graph carries that the runnable manifest does not.
  *
- * The list is capped, because 145 of the real graph's 178 gate nodes are outside
- * the 33-gate release universe and a diff that reaches many of them would bury the
+ * The list is capped, because 144 of the real graph's 176 gate nodes are outside
+ * the 32-gate release universe and a diff that reaches many of them would bury the
  * report. A cap on a diagnostic is still a cap, so the overflow states its own size
  * in the last row rather than vanishing — the same rule the selection caps follow,
  * charged to `warnings` because a suppressed *warning* does not make the *selection*

@@ -147,7 +147,7 @@ test('specialist selection covers implementation, judgment, long-context, and Co
   }
 })
 
-test('mixed tool and judgment recommendations put Sol Max judgment first and retain the Terra operator', () => {
+test('mixed tool and judgment recommendations put Astra Max judgment first and retain the Astra Medium operator', () => {
   const securityBrowser = recommendOfficialSubagentRoles({
     description: 'Security review using Chrome browser evidence',
     readOnly: true,
@@ -504,8 +504,8 @@ test('mission preparation keeps mass totals reusable across waves and serializes
     assert.equal(search.plan.fanout_policy.mass_parallel, true)
     assert.equal(search.plan.first_wave, 2)
     assert.equal(search.plan.concurrency_governor.safe_active_workers, 2)
-    assert.equal(search.plan.agents.explorer.routed_model, 'gpt-5.6-terra')
-    assert.equal(search.plan.agents.explorer.routed_model_reasoning_effort, 'max')
+    assert.equal(search.plan.agents.explorer.routed_model, 'gpt-6-astra')
+    assert.equal(search.plan.agents.explorer.routed_model_reasoning_effort, 'medium')
 
     const typingDir = path.join(root, '.sneakoscope', 'missions', 'M-typing-lane')
     await fs.mkdir(typingDir, { recursive: true })

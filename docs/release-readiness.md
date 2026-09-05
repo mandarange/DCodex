@@ -1,6 +1,79 @@
-# SKS 10.0.0 Release Readiness
+# SKS 10.1.0 Release Readiness
 
-## Current decision
+## Current release
+
+10.1.0 is the next release candidate. It combines the Astra role defaults and
+runtime cleanup described in [Essential Trust](essential-trust.md) with the
+codex-lb authentication preference, SKS Center improvements, and update
+convergence changes recorded in [the changelog](../CHANGELOG.md).
+
+On 2026-09-05 the public npm registry reported `latest` as 10.0.0, with
+`gitHead` `417a9d9e76547b5daa6176b12330bc126be2e65b`, and returned HTTP 404
+for 10.1.0. That is version availability evidence, not release authorization.
+The release stamp and pack receipt must be generated from the final clean
+10.1.0 commit. Earlier release evidence below remains historical.
+
+## Direct npm publication
+
+Finish source changes, version metadata, documentation, source-index refresh,
+and focused verification before creating the candidate commit. Then run the
+normal full release workflow from that clean commit:
+
+```sh
+npm run release:check:full
+```
+
+This command performs one clean build, one canonical release test run, the full
+release DAG, creation of the clean-HEAD pack receipt, required real checks,
+dist freshness verification, and release-stamp creation, in that order.
+Missing or failed required Codex, SDK, or worktree checks block the stamp.
+Optional image-generation and staged physical evidence are reported according
+to their actual coverage and cannot be represented as passed live execution.
+
+After the checks pass, the authorized maintainer pushes the same candidate
+commit to `main`. Direct publication requires a clean `main` checkout exactly
+matching live `origin/main`; it does not require a pre-existing release tag.
+Before handing publication to the operator, verify:
+
+```sh
+npm run release:version-truth
+node ./dist/scripts/release-check-stamp.js verify
+node ./dist/scripts/release-pack-receipt.js verify
+node ./dist/scripts/release-provenance-check.js --publish
+npm whoami --registry https://registry.npmjs.org/
+npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
+npm publish --dry-run --json
+```
+
+The dry run executes the normal lifecycle. `prepublishOnly` checks repository
+reproducibility, the npm dist-tag, and the full release stamp; `prepack` performs
+a deterministic clean rebuild and verifies the same stamp again. A dry run
+does not check upload authentication, so the separate identity and maintainer
+checks above are required for the handoff. The actual publication repeats its
+registry-authentication preflight.
+
+After a successful handoff, the operator runs only:
+
+```sh
+npm publish
+```
+
+`publishConfig` supplies the public npm registry, public access, and the
+`latest` tag. npm may request the operator's authentication or two-factor
+confirmation. Do not disable lifecycle scripts. Do not modify or commit files
+after creating the stamp: a new commit or changed source requires a fresh full
+release check. Registry publication remains the operator's action.
+
+## Historical release records
+
+The following 10.0.0 and earlier records preserve their original claims and
+evidence. Their candidate commands, versions, and pending decisions are not
+the 10.1.0 release procedure. The staged workflow described later is a separate
+publication option; direct `npm publish` does not require its physical receipts.
+
+# SKS 10.0.0 Release Readiness (historical)
+
+## 10.0.0 candidate decision (historical)
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 

@@ -92,8 +92,8 @@ export function decideAgentEffort(input: { persona?: Partial<AgentPersona>; prom
 }
 
 // Official Codex subagents use one of four fixed profiles: Luna Max for tiny
-// mechanical work, Sol High for ordinary implementation, Sol Max for
-// judgment, and Terra Max for long-context or Codex-tool execution.
+// mechanical work, Astra High for ordinary implementation, Astra Max for
+// judgment, and Astra Medium for long-context or Codex-tool execution.
 export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPersona>; prompt?: string; agentId?: string; readonly?: boolean } = {}): AgentEffortDecision {
   const persona = input.persona || {}
   const prompt = String(input.prompt || '')
@@ -103,9 +103,9 @@ export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPers
   const managedRole = managedOfficialSubagentRoleByName(agentId)
     || managedOfficialSubagentRoleByName(String(persona.naruto_role || ''))
     || managedOfficialSubagentRoleByName(role)
-  // Installed custom-agent roles already seal Luna/Terra/Sol High/Sol Max.
+  // Installed custom-agent roles already seal Luna Max/Astra High/Max/Medium.
   // Prefer that catalog contract over re-scoring the parent goal text, which
-  // otherwise collapses almost every child onto Sol.
+  // otherwise collapses almost every child onto Astra Max.
   if (managedRole) {
     const profile = subagentModelProfile(managedRole.model_policy)
     const effort: AgentReasoningEffort = profile.modelReasoningEffort
@@ -131,13 +131,13 @@ export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPers
       reason: `managed_role:${managedRole.codex_name}:${profile.policy}`,
       dynamic: true,
       escalation_triggers: [
-        'focused review, debugging, planning, integration, security, database, research, release, or unresolved ambiguity selects Sol Max',
+        'focused review, debugging, planning, integration, security, database, research, release, or unresolved ambiguity selects Astra Max',
         'incidental judgment vocabulary does not override a clearly classified implementation or context/tools slice',
         'requested model/effort profile unavailable blocks instead of silently falling back'
       ],
       downshift_triggers: [
-        'ordinary UI, logic, backend, or native implementation selects Sol High',
-        'long-context, Browser/Chrome, Computer Use, image-generation, or large search selects Terra Max',
+        'ordinary UI, logic, backend, or native implementation selects Astra High',
+        'long-context, Browser/Chrome, Computer Use, image-generation, or large search selects Astra Medium',
         'tiny short-context mechanical search/typing/rename work selects Luna Max'
       ]
     }
@@ -185,13 +185,13 @@ export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPers
     reason: routed.reason,
     dynamic: true,
     escalation_triggers: [
-      'focused review, debugging, planning, integration, security, database, research, release, or unresolved ambiguity selects Sol Max',
+      'focused review, debugging, planning, integration, security, database, research, release, or unresolved ambiguity selects Astra Max',
       'incidental judgment vocabulary does not override a clearly classified implementation or context/tools slice',
       'requested model/effort profile unavailable blocks instead of silently falling back'
     ],
     downshift_triggers: [
-      'ordinary UI, logic, backend, or native implementation selects Sol High',
-      'long-context, Browser/Chrome, Computer Use, or image-generation execution selects Terra Max',
+      'ordinary UI, logic, backend, or native implementation selects Astra High',
+      'long-context, Browser/Chrome, Computer Use, or image-generation execution selects Astra Medium',
       'tiny short-context mechanical work selects Luna Max'
     ]
   }
@@ -219,18 +219,18 @@ export function buildAgentEffortPolicy(roster: any = {}) {
     dynamic: true,
     service_tier: 'fast',
     model_catalog_policy: narutoFamilyOnly ? 'official_subagent_four_profile_matrix' : 'codex_catalog_passthrough',
-    model_constraint: narutoFamilyOnly ? ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'] : null,
+    model_constraint: narutoFamilyOnly ? ['gpt-5.6-luna', 'gpt-6-astra'] : null,
     model_tiers: narutoFamilyOnly
-      ? ['gpt-5.6-luna-max', 'gpt-5.6-sol-high', 'gpt-5.6-sol-max', 'gpt-5.6-terra-max']
+      ? ['gpt-5.6-luna-max', 'gpt-6-astra-high', 'gpt-6-astra-max', 'gpt-6-astra-medium']
       : ['codex-selected-low', 'codex-selected-medium', 'codex-selected-high', 'codex-selected-xhigh', 'glm-5.2-minimal', 'glm-5.2-low', 'glm-5.2-high', 'glm-5.2-xhigh'],
-    allowed_efforts: narutoFamilyOnly ? ['high', 'max'] : codexModelEffortCapability().advertised_efforts,
+    allowed_efforts: narutoFamilyOnly ? ['medium', 'high', 'max'] : codexModelEffortCapability().advertised_efforts,
     model_effort_capability: codexModelEffortCapability(),
     max_agents: roster.max_agents || 20,
     agent_count: roster.agent_count || decisions.length,
     concurrency: roster.concurrency || decisions.length,
     decisions,
     rule: narutoFamilyOnly
-      ? 'Official Naruto subagents use GPT-5.6 Luna Max only for tiny short-context mechanical work, GPT-5.6 Sol High for ordinary implementation, GPT-5.6 Sol Max for judgment-heavy work, and GPT-5.6 Terra Max for long-context or Browser/Chrome, Computer Use, and image-generation execution. Judgment wins when one slice cannot be safely split.'
+      ? 'Official Naruto subagents use GPT-5.6 Luna Max only for tiny short-context mechanical work, GPT-6 Astra High for ordinary implementation, GPT-6 Astra Max for judgment-heavy work, and GPT-6 Astra Medium for long-context or Browser/Chrome, Computer Use, and image-generation execution. Judgment wins when one slice cannot be safely split.'
       : 'Codex/OpenAI workers inherit the current Codex-selected model, including future catalog entries; SKS changes only advertised reasoning effort. Explicit non-Codex provider modes retain their provider model.'
   }
 }

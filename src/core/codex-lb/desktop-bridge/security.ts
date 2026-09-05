@@ -230,7 +230,9 @@ export function resolveBridgeRequestRoute(
     // `policy_generation` digests the entire route map, any unrelated catalog
     // churn ages every live pin at once, and rejecting on that alone is what
     // surfaced as an intermittent `session_pin_route_unavailable` mid-session.
-    const current = policy.model_routes[publicModel];
+    const bare = policy.model_routes[publicModel];
+    const qualified = policy.model_routes[`${pin.provider_id}:${publicModel}`];
+    const current = bare?.provider_id === pin.provider_id && bare.upstream_model === pin.upstream_model ? bare : qualified;
     if (!current || current.provider_id !== pin.provider_id || current.upstream_model !== pin.upstream_model) {
       throw new DesktopBridgeError('session_pin_route_unavailable');
     }
@@ -288,15 +290,11 @@ export function assertDesktopBridgeRouteContext(
   try {
     route = resolver(request, policy, config.providerSessionPins);
   } catch (error) {
-    // Official fallback: a request the route policy does not claim for a
-    // provider — no model (non-Responses endpoints), an unknown model, or a
-    // stale provider pin whose live route moved to `openai` — passes through
-    // with the client's own identity when passthrough is configured. A pin
-    // failure whose live route still names a provider is a genuine provider
-    // problem and is never absorbed here.
+    // Unclaimed models may use the official identity. A failed provider pin
+    // must never move an existing thread to another account.
     if (desktopBridgeOfficialPassthroughEnabled(config)
       && error instanceof DesktopBridgeError
-      && (error.code === 'catalog_model_route_missing' || error.code === 'session_pin_route_unavailable')) {
+      && error.code === 'catalog_model_route_missing') {
       const model = canonicalizeBridgeModelId(request.public_model) || '';
       const live = model ? policy.model_routes[model] : undefined;
       if (!live || live.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) {
@@ -312,7 +310,12 @@ export function assertDesktopBridgeRouteContext(
     if (route.session_pin) throw new DesktopBridgeError('bridge_session_pin_invalid');
     return route;
   }
-  const expected = policy.model_routes[route.public_model];
+  const existingPin = request.session_id ? config.providerSessionPins.find((pin) =>
+    pin.thread_id === request.session_id && pin.public_model === route.public_model
+    && pin.provider_id === route.provider_id && pin.upstream_model === route.upstream_model) : null;
+  const bare = policy.model_routes[route.public_model];
+  const expected = existingPin && (bare?.provider_id !== route.provider_id || bare?.upstream_model !== route.upstream_model)
+    ? policy.model_routes[`${route.provider_id}:${route.public_model}`] : bare;
   if (!expected || expected.provider_id !== route.provider_id || expected.upstream_model !== route.upstream_model) {
     throw new DesktopBridgeError('catalog_model_route_missing');
   }

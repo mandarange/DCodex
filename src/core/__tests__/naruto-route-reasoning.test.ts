@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ROUTES, routeReasoning } from '../routes.js'
+import { ROUTES, routeReasoning, reasoningInstruction } from '../routes.js'
 
 const naruto = ROUTES.find((route) => route.id === 'Naruto')
 
-test('explicit Naruto route reasoning matches the Sol Max parent policy', () => {
+test('explicit Naruto route reasoning matches the Astra Max parent policy', () => {
   assert.ok(naruto)
   for (const prompt of [
     'tiny typo fix',
@@ -15,7 +15,7 @@ test('explicit Naruto route reasoning matches the Sol Max parent policy', () => 
     const result = routeReasoning(naruto, prompt)
     assert.equal(result.effort, 'max', prompt)
     assert.equal(result.profile, 'sks-research-max', prompt)
-    assert.equal(result.reason, 'explicit_naruto_parent_sol_max', prompt)
+    assert.equal(result.reason, 'explicit_naruto_parent_policy_max', prompt)
   }
 })
 
@@ -43,4 +43,11 @@ test('Naruto complex and high-risk parent routes use max reasoning', () => {
     assert.equal(result.effort, 'max', prompt)
     assert.equal(result.profile, 'sks-research-max', prompt)
   }
+})
+
+
+test('route effort is advisory and preserves the selected runtime settings', () => {
+  const text = reasoningInstruction({ effort: 'high' })
+  assert.match(text, /Preserve the user-selected model, reasoning effort, and service tier/)
+  assert.doesNotMatch(text, /in Fast service tier|use high reasoning/)
 })

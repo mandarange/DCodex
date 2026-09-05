@@ -19,6 +19,7 @@ test('installed Codex agent catalog exposes only current official roles', async 
     const parsed = parse(text);
     assert.equal(parsed.name, role.codex_name);
     assert.equal(parsed.model, role.model);
+    assert.equal(parsed.model, role.codex_name === 'worker' ? 'gpt-5.6-luna' : 'gpt-6-astra');
     assert.equal(parsed.model_reasoning_effort, role.model_reasoning_effort);
     assert.equal(Object.hasOwn(parsed, 'model_policy'), false);
     assert.equal(Object.hasOwn(parsed, 'sandbox_mode'), role.sandbox === 'read-only');
@@ -31,15 +32,15 @@ test('official custom agent catalog has unique identities and broad specialist c
   const manifest = await import('../../dist/core/managed-assets/managed-assets-manifest.js');
   const roles = manifest.MANAGED_OFFICIAL_SUBAGENT_ROLES;
   const expectedSpecialists = new Map([
-    ['native_app_specialist', { policy: 'sol_high_implementation', model: 'gpt-5.6-sol', effort: 'high', sandbox: undefined }],
-    ['toolchain_specialist', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: undefined }],
-    ['protocol_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
-    ['runtime_reliability_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
-    ['triwiki_evidence_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
-    ['long_context_analyst', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
-    ['computer_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
-    ['browser_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
-    ['image_generation_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: undefined }]
+    ['native_app_specialist', { policy: 'sol_high_implementation', model: 'gpt-6-astra', effort: 'high', sandbox: undefined }],
+    ['toolchain_specialist', { policy: 'sol_max_judgment', model: 'gpt-6-astra', effort: 'max', sandbox: undefined }],
+    ['protocol_reviewer', { policy: 'sol_max_judgment', model: 'gpt-6-astra', effort: 'max', sandbox: 'read-only' }],
+    ['runtime_reliability_reviewer', { policy: 'sol_max_judgment', model: 'gpt-6-astra', effort: 'max', sandbox: 'read-only' }],
+    ['triwiki_evidence_reviewer', { policy: 'sol_max_judgment', model: 'gpt-6-astra', effort: 'max', sandbox: 'read-only' }],
+    ['long_context_analyst', { policy: 'terra_max_context_tools', model: 'gpt-6-astra', effort: 'medium', sandbox: 'read-only' }],
+    ['computer_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-6-astra', effort: 'medium', sandbox: 'read-only' }],
+    ['browser_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-6-astra', effort: 'medium', sandbox: 'read-only' }],
+    ['image_generation_operator', { policy: 'terra_max_context_tools', model: 'gpt-6-astra', effort: 'medium', sandbox: undefined }]
   ]);
 
   assert.equal(roles.length, 25);

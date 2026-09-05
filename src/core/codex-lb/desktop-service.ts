@@ -49,6 +49,7 @@ export interface DesktopBridgeServiceSettings {
   allowed_origins: string[];
   connect_timeout_ms: number;
   idle_timeout_ms: number;
+  auth_priority_enabled?: boolean;
   official_passthrough: { enabled: boolean; base_url: string; models: 'auto' | 'passthrough' | 'gateway' };
 }
 
@@ -165,6 +166,7 @@ export function defaultDesktopBridgeServiceSettings(input: Partial<Omit<DesktopB
     listen_port: input.listen_port ?? DEFAULT_DESKTOP_BRIDGE_PORT, provider_registry: registry, route_policy: policy,
     provider_session_pins: [...(input.provider_session_pins || [])], client_capability_sha256: input.client_capability_sha256 || '0'.repeat(64), allowed_origins: [...(input.allowed_origins || DEFAULT_ALLOWED_ORIGINS)],
     connect_timeout_ms: input.connect_timeout_ms ?? 10_000, idle_timeout_ms: input.idle_timeout_ms ?? 300_000,
+    auth_priority_enabled: input.auth_priority_enabled ?? false,
     // Dropping this here erased the operator's pinned official-models choice on
     // every settings rebuild; the validator defaults it only when truly absent.
     ...(input.official_passthrough === undefined ? {} : { official_passthrough: input.official_passthrough })
@@ -199,7 +201,7 @@ export async function writeDesktopBridgeServiceSettings(file: string, settings: 
 
 async function writeDesktopBridgeServiceSettingsUnlocked(file: string, settings: DesktopBridgeServiceSettings): Promise<void> {
   const validated = validateDesktopBridgeServiceSettings(settings);
-  const persisted = { schema: validated.schema, listen_host: validated.listen_host, listen_port: validated.listen_port, provider_registry: validated.provider_registry, route_policy: validated.route_policy, provider_session_pins: validated.provider_session_pins, client_capability_sha256: validated.client_capability_sha256, allowed_origins: validated.allowed_origins, connect_timeout_ms: validated.connect_timeout_ms, idle_timeout_ms: validated.idle_timeout_ms, official_passthrough: validated.official_passthrough };
+  const persisted = { schema: validated.schema, listen_host: validated.listen_host, listen_port: validated.listen_port, provider_registry: validated.provider_registry, route_policy: validated.route_policy, provider_session_pins: validated.provider_session_pins, client_capability_sha256: validated.client_capability_sha256, allowed_origins: validated.allowed_origins, connect_timeout_ms: validated.connect_timeout_ms, idle_timeout_ms: validated.idle_timeout_ms, official_passthrough: validated.official_passthrough, auth_priority_enabled: validated.auth_priority_enabled ?? false };
   await writeTextAtomic(file, `${JSON.stringify(persisted, null, 2)}\n`, { mode: 0o600 }); await fsp.chmod(file, 0o600);
 }
 
@@ -513,6 +515,7 @@ async function autoApplyOfficialModelsAtServe(
   const mode = await resolveEffectiveOfficialModelsMode(settings.official_passthrough, {
     home,
     codexLbRegistered: desktopBridgeCodexLbRegistered(settings.provider_registry.providers),
+    authPriorityEnabled: settings.auth_priority_enabled === true,
   });
   const converged = applyOfficialModelPassthrough(settings.route_policy, { mode });
   if (converged.policy_generation === settings.route_policy.policy_generation) return;
@@ -576,7 +579,7 @@ export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = 
 function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServiceSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('desktop_bridge_settings_invalid'); const row = value as Record<string, unknown>;
   const input = row; if (input.schema !== DESKTOP_BRIDGE_SETTINGS_SCHEMA) throw new Error('desktop_bridge_settings_schema_invalid');
-  const allowedKeys = new Set(['schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy', 'provider_session_pins', 'client_capability_sha256', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms', 'official_passthrough']);
+  const allowedKeys = new Set(['schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy', 'provider_session_pins', 'client_capability_sha256', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms', 'official_passthrough', 'auth_priority_enabled']);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) throw new Error('desktop_bridge_settings_unknown_field');
   const serialized = JSON.stringify(input);
   if (/"(?:api_?key|secret|authorization|cookie|access_token|refresh_token|gatewayKey)"\s*:/i.test(serialized) || /Bearer\s+[A-Za-z0-9._~-]{8,}/i.test(serialized)) {
@@ -591,8 +594,10 @@ function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServ
   if (!/^[a-f0-9]{64}$/.test(clientCapabilitySha256)) throw new Error('desktop_bridge_settings_client_capability_invalid');
   const origins = Array.isArray(input.allowed_origins) ? input.allowed_origins.map(String).filter(Boolean) : []; if (!origins.length) throw new Error('desktop_bridge_settings_allowed_origins_empty');
   const connect = Number(input.connect_timeout_ms); const idle = Number(input.idle_timeout_ms); if (!Number.isFinite(connect) || connect < 100 || connect > 120_000) throw new Error('desktop_bridge_settings_connect_timeout_invalid'); if (!Number.isFinite(idle) || idle < 1_000 || idle > 86_400_000) throw new Error('desktop_bridge_settings_idle_timeout_invalid');
+  if (input.auth_priority_enabled !== undefined && typeof input.auth_priority_enabled !== 'boolean') throw new Error('desktop_bridge_settings_auth_priority_invalid');
+  const authPriorityEnabled = input.auth_priority_enabled === true;
   const officialPassthrough = validateOfficialPassthroughSettings(input.official_passthrough);
-  return { schema: DESKTOP_BRIDGE_SETTINGS_SCHEMA, listen_host: host, listen_port: port, provider_registry: registry, route_policy: policy, provider_session_pins: pins, client_capability_sha256: clientCapabilitySha256, allowed_origins: [...new Set(origins)], connect_timeout_ms: connect, idle_timeout_ms: idle, official_passthrough: officialPassthrough };
+  return { schema: DESKTOP_BRIDGE_SETTINGS_SCHEMA, listen_host: host, listen_port: port, provider_registry: registry, route_policy: policy, provider_session_pins: pins, client_capability_sha256: clientCapabilitySha256, allowed_origins: [...new Set(origins)], connect_timeout_ms: connect, idle_timeout_ms: idle, official_passthrough: officialPassthrough, auth_priority_enabled: authPriorityEnabled };
 }
 
 /**
@@ -624,7 +629,9 @@ function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean
 
 /**
  * The official-models routing mode that should actually be applied right now.
- * Explicit operator choices win unconditionally. 'auto' follows the operator's
+ * Authentication priority overrides the bare-model choice only with a ready
+ * Codex-LB registration; switching it off restores that durable choice.
+ * Otherwise explicit choices win, and 'auto' follows the operator's
  * ACTIONS: registering and enabling the codex-lb provider IS choosing the
  * gateway, so selected models keep running through it until the operator
  * un-registers ("인증을 풀면") — at which point a ChatGPT-OAuth host converges
@@ -633,8 +640,9 @@ function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean
  */
 export async function resolveEffectiveOfficialModelsMode(
   official: { enabled: boolean; models?: 'auto' | 'passthrough' | 'gateway' } | null | undefined,
-  input: { home: string; authPath?: string; codexLbRegistered?: boolean },
+  input: { home: string; authPath?: string; codexLbRegistered?: boolean; authPriorityEnabled?: boolean },
 ): Promise<'passthrough' | 'gateway'> {
+  if (input.authPriorityEnabled === true && input.codexLbRegistered === true) return 'gateway';
   if (official && official.enabled === false) return 'gateway';
   const models = official?.models || 'auto';
   if (models === 'passthrough' || models === 'gateway') return models;

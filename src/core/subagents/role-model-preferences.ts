@@ -14,6 +14,7 @@ import {
 } from '../codex-app/codex-model-catalog.js';
 import { childInheritsActiveMainModel } from '../provider/model-router.js';
 import { isRecord } from '../json/records.js';
+import { SUBAGENT_MODEL_POLICIES } from './model-policy.js';
 
 export const ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v2' as const;
 const LEGACY_ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v1';
@@ -36,12 +37,14 @@ export interface RoleModelPreferenceStore {
   readonly roles: Readonly<Record<string, RoleModelPreference>>;
 }
 
-export const SUPPORTED_ROLE_MODEL_PROFILES = Object.freeze([
-  Object.freeze({ provider: 'openai', model: 'gpt-5.6-luna', reasoning_effort: 'max', source: 'managed-default' }),
-  Object.freeze({ provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'max', source: 'managed-default' }),
-  Object.freeze({ provider: 'openai', model: 'gpt-5.6-sol', reasoning_effort: 'high', source: 'managed-default' }),
-  Object.freeze({ provider: 'openai', model: 'gpt-5.6-sol', reasoning_effort: 'max', source: 'managed-default' })
-] as const);
+export const SUPPORTED_ROLE_MODEL_PROFILES = Object.freeze(
+  Object.values(SUBAGENT_MODEL_POLICIES).map((profile) => Object.freeze({
+    provider: 'openai' as const,
+    model: profile.model,
+    reasoning_effort: profile.modelReasoningEffort,
+    source: 'managed-default' as const
+  }))
+);
 
 export function roleModelPreferencesPath(env: NodeJS.ProcessEnv = process.env): string {
   const sksHome = path.resolve(env.SKS_HOME || path.join(env.HOME || os.homedir(), '.sneakoscope'));
@@ -76,10 +79,11 @@ export async function readRoleModelPreferences(input: {
         blockers.push(`role_model_preference_invalid_profile:${role.codex_name}`);
         continue;
       }
+      const migrated = migratedManagedRoleModelProfile(provider, model, reasoning);
       roles[role.codex_name] = {
         provider,
-        model,
-        reasoning_effort: reasoning,
+        model: migrated?.model || model,
+        reasoning_effort: migrated?.modelReasoningEffort || reasoning,
         updated_at: String(rawPreference.updated_at || parsed.updated_at || '')
       };
     }
@@ -97,6 +101,20 @@ export async function readRoleModelPreferences(input: {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { store: emptyStore(), path: filePath, blockers: [] };
     return { store: emptyStore(), path: filePath, blockers: ['role_model_preferences_unreadable'] };
   }
+}
+
+function migratedManagedRoleModelProfile(provider: string, model: string, reasoning: string) {
+  // Translate only the replaced managed choices in memory; user-owned routed
+  // profiles and the stored document remain unchanged during reads.
+  if (provider !== 'openai') return null;
+  if (model === 'gpt-5.6-sol') {
+    if (reasoning === 'high') return SUBAGENT_MODEL_POLICIES.sol_high_implementation;
+    if (reasoning === 'max') return SUBAGENT_MODEL_POLICIES.sol_max_judgment;
+  }
+  if (model === 'gpt-5.6-terra' && reasoning === 'max') {
+    return SUBAGENT_MODEL_POLICIES.terra_max_context_tools;
+  }
+  return null;
 }
 
 export async function roleModelPreferencesStatus(input: {

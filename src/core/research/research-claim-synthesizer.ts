@@ -200,7 +200,7 @@ function buildResearchClaimSynthesisPrompt(input: { plan: any; sourceLedger: any
   const contract = input.plan?.quality_contract || {}
   return [
     'Build a semantic claim-evidence matrix for this Research mission.',
-    'This is a judgment-heavy task: use GPT-5.6 Sol with max reasoning.',
+    `This is a judgment-heavy task: use ${THINKING_SUBAGENT_MODEL} with ${SUBAGENT_EFFORT} reasoning.`,
     'Return exactly one JSON object matching sks.claim-evidence-matrix.v1.',
     'Never reuse or merge discovery claim IDs merely because their strings match.',
     'Group sources only when their hydrated notes/content actually support the same written claim.',

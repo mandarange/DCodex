@@ -275,7 +275,7 @@ export const ROUTES = [
     command: '$Naruto',
     mode: 'NARUTO',
     route: 'Codex official subagent workflow',
-    description: '$Naruto prepares a lightweight Codex official subagent workflow. The Sol Max parent owns decomposition, delegates only defensible direct-child slices, reuses bounded query-aware TriWiki attention anchors, waits for every requested thread, integrates the results, and reports scoped verification. Automatic fan-out starts at four for bounded work, six for explicit parallel work, eight for large-scale work, and sixteen for mass cheap-model fan-out on the Luna/Terra lanes; normal expansion is capped at twelve, while the mass lane may expand to sixty-four. The default max_threads of twelve remains a frame budget (cap), never a target; the absolute hard frame cap is two hundred fifty-six, and multi-wave scheduling reuses capacity for requested counts beyond the first wave. Luna Max handles tiny mechanical shards, Terra Max handles broad search and exploration shards, and Sol handles implementation and judgment; explicit --agents remains authoritative.',
+    description: '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and scoped verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, preserve the Luna/Astra child role models, honor explicit counts and measured host limits, and reuse returned capacity.',
     requiredSkills: ['naruto', 'pipeline-runner', 'prompt-pipeline', 'honest-mode'],
     dollarAliases: ['$Work'],
     appSkillAliases: ['work', 'from-chat-img'],
@@ -411,9 +411,9 @@ export const ROUTES = [
     command: '$Research',
     mode: 'RESEARCH',
     route: 'research mission',
-    description: 'Frontier discovery with named xhigh persona-lens agents, Eureka ideas, vigorous evidence-bound debate, layered public source retrieval, falsification, a paper manuscript, a final genius-opinion summary, and testable predictions.',
+    description: 'Evidence-bound discovery with layered public source retrieval, independent review dimensions, falsification, a paper manuscript, and testable predictions.',
     requiredSkills: ['research', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
-    lifecycle: ['research_plan', 'source_skill', 'layered_source_ledger', 'xhigh_agent_council', 'eureka_moments', 'debate_ledger', 'report', 'paper', 'genius_opinion_summary', 'novelty_ledger', 'falsification_ledger', 'research_gate', 'post_route_reflection', 'honest_mode'],
+    lifecycle: ['research_plan', 'source_skill', 'layered_source_ledger', 'independent_review', 'report', 'paper', 'novelty_ledger', 'falsification_ledger', 'research_gate'],
     context7Policy: 'if_external_docs',
     reasoningPolicy: 'xhigh',
     stopGate: 'research-gate.json',
@@ -732,7 +732,7 @@ export const COMMAND_CATALOG = [
   { name: 'selftest', usage: 'sks selftest [--mock]', description: 'Run local smoke tests without calling a model.' },
   { name: 'goal', usage: 'sks goal create|edit|pause|resume|clear|status ...', description: 'Print a detailed Codex native /goal command without creating SKS Goal state.' },
   { name: 'seo-geo-optimizer', usage: 'sks seo-geo-optimizer [seo|geo] doctor|audit|research|strategy|plan|apply|verify|status|rollback|fixture [mission|latest] [--mode seo|geo] [--target auto|website|docs|package] [--include-marketing] [--json]', description: 'Run the unified SEO/GEO optimizer on the shared search-visibility kernel with mode-specific gates, marketing research/strategy, safe apply, and proof.' },
-  { name: 'research', usage: 'sks research prepare|run|status ...', description: 'Run long-form real research missions with xhigh agent Eureka ideas, debate, layered sources, paper, novelty, and falsification gates.' },
+  { name: 'research', usage: 'sks research prepare|run|status ...', description: 'Run evidence-bound research missions with layered sources, independent review, paper, novelty, and falsification checks.' },
   { name: 'eval', usage: 'sks eval run|compare|thresholds ...', description: 'Run deterministic context-quality and performance evidence checks.' },
   { name: 'harness', usage: 'sks harness fixture|review [--json]', description: 'Run Harness Growth Factory fixtures for forgetting, skills, experiments, tool taxonomy, permissions, and MultiAgentV2.' },
   { name: 'perf', usage: 'sks perf run|workflow|cold-start [--json] [--iterations N]', description: 'Measure structured GPT-5.6/SKS performance budgets, including cold-start, Proof Field workflow decisions, and fast-lane evidence.' },
@@ -748,7 +748,7 @@ export const COMMAND_CATALOG = [
   { name: 'wiki', usage: 'sks wiki coords|pack|refresh|publish|rebuild-index|validate|validate-shared|wrongness ...', description: 'Build, refresh, publish shared shards, rebuild ignored indexes, validate, and attach wrongness-memory context to RGBA/trig LLM Wiki packs with attention.use_first and attention.hydrate_first for compact recall plus source hydration.' },
   { name: 'memory', usage: 'sks memory build [--json] | sks memory gc [--dry-run]', description: 'Project TriWiki context-pack memory into managed AGENTS.md blocks or run bounded memory cleanup.' },
   { name: 'hproof', usage: 'sks hproof check [mission-id|latest]', description: 'Evaluate the H-Proof done gate for a mission.' },
-  { name: 'naruto', usage: 'sks naruto run \"task\" [--agents N] [--max-threads N] [--trusted-project] [--json] | sks naruto status|subagents|proof [latest|M-...] [--json] | sks naruto parent-summary --mission M-... --stdin [--json]', description: 'Run or inspect the Codex official subagent workflow with a Sol Max parent and fixed Luna Max mechanical, Sol High implementation, Sol Max judgment, and Terra Max long-context/tool profiles, max_depth=1, and structured parent-thread completion evidence.' },
+  { name: 'naruto', usage: 'sks naruto run \"task\" [--agents N] [--max-threads N] [--trusted-project] [--json] | sks naruto status|subagents|proof [latest|M-...] [--json] | sks naruto parent-summary --mission M-... --stdin [--json]', description: 'Run or inspect the Codex official subagent workflow with an Astra standalone parent default and Luna Max mechanical, Astra High implementation, Astra Max judgment, and Astra Medium long-context/tool profiles, max_depth=1, and structured parent-thread completion evidence.' },
   { name: 'reasoning', usage: 'sks reasoning ["prompt"] [--json]', description: 'Show SKS temporary reasoning-effort routing: medium for simple tasks, high for logic, xhigh for research.' },
   { name: 'gx', usage: 'sks gx init|render|validate|drift|snapshot [name]', description: 'Create and verify deterministic SVG/HTML visual context cartridges.' },
   { name: 'profile', usage: 'sks profile show|set <model>', description: 'Inspect or set the current SKS model profile metadata.' },
@@ -1282,8 +1282,8 @@ export function reflectionRequiredForRoute(route: any) {
 
 export function looksLikeCodeChangingWork(prompt: any = '') {
   const text = String(prompt || '');
-  return /\b(implement|build|make|add|edit|modify|change|fix|refactor|rewrite|migrate|create|delete|remove|rename|update|patch)\b/i.test(text)
-    || /(코드|구현|개발|수정|변경|추가|삭제|해결|고쳐|바꿔|리팩터|마이그레이션)/i.test(text);
+  return /\b(implement|build|make|add|edit|modify|change|fix|refactor|simplify|optimi[sz]e|improve|rewrite|migrate|create|delete|remove|rename|update|patch)\b/i.test(text)
+    || /(코드|구현|개발|수정|변경|추가|삭제|제거|최적화|개선|단순화|정리|해결|고쳐|바꿔|리팩터|마이그레이션)/i.test(text);
 }
 
 export type PromptExecutionEffect = 'read' | 'write' | 'auth' | 'security' | 'delete' | 'deploy' | 'dependency';
@@ -1327,7 +1327,7 @@ export function subagentExecutionPolicyText(route: any, prompt: any = '') {
   return [
     'Codex subagent workflow: required for this explicit Naruto or parallel task.',
     'The parent agent owns decomposition, integration, scoped verification, and the final answer.',
-    'Delegate only genuinely independent slices. Use Luna Max only for tiny short-context mechanical work, Sol High for ordinary implementation, Sol Max for review/debug/planning/architecture/integration/risk judgment, and Terra Max for long-context or Computer Use, Browser/Chrome, and image-generation execution.',
+    'Delegate only genuinely independent slices. Use Luna Max only for tiny short-context mechanical work, Astra High for ordinary implementation, Astra Max for review/debug/planning/architecture/integration/risk judgment, and Astra Medium for long-context or Computer Use, Browser/Chrome, and image-generation execution.',
     'Parallel writes require disjoint paths; serialize overlapping paths, prohibit nested delegation, avoid duplicate work, wait for all requested agent threads, and close completed threads after collecting results.',
     'Completion evidence comes from official SubagentStart/SubagentStop events plus the parent integration summary, not process counts or PID evidence.'
   ].join(' ');
@@ -1351,12 +1351,12 @@ export function routeReasoning(route: any, prompt: any = '') {
 }
 
 function narutoRouteReasoning(route: any, text: any = '') {
-  if (route?.explicit_invocation !== false) return reasoning('max', 'explicit_naruto_parent_sol_max');
+  if (route?.explicit_invocation !== false) return reasoning('max', 'explicit_naruto_parent_policy_max');
   const profile: TaskProfile = isTaskProfile(route?.task_profile)
     ? route.task_profile
     : classifyTaskProfile(text);
   if (profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
-    return reasoning('max', `implicit_naruto_${profile}_sol_max`);
+    return reasoning('max', `implicit_naruto_${profile}_parent_max`);
   }
   if (profile === 'tiny-change' || profile === 'passthrough' || profile === 'answer') {
     return reasoning('low', `implicit_naruto_${profile}_lightweight`);
@@ -1375,7 +1375,7 @@ export function reasoningProfileName(effort: any) {
 
 export function reasoningInstruction(info: any) {
   const profile = reasoningProfileName(info?.effort);
-  return `Temporary reasoning route: use ${info?.effort || 'medium'} reasoning (${profile}) in Fast service tier for this SKS route only; do not persist profile changes, and return to the default/user-selected profile after the route gate passes.`;
+  return `Reasoning hint: ${info?.effort || 'medium'} (${profile}) for this task. Preserve the user-selected model, reasoning effort, and service tier; this hint does not change live or saved settings.`;
 }
 
 function reasoning(effort: any, reason: any) {

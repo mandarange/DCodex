@@ -38,9 +38,9 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
     'CodexLifecyclePolicy.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
-    'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
+    'NativeView.swift', 'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesModels.swift', 'UpdatesViewController.swift',
     'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersReliability.swift',
-    'ProvidersRoutingTruth.swift',
+    'AuthPriorityState.swift', 'ProvidersRoutingTruth.swift',
     'ProvidersOpenRouter.swift',
     'ProvidersModelExposure.swift',
     'ProvidersBridgeCatalog.swift',
@@ -63,12 +63,12 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   const materialized = source();
   assert.match(materialized, /\/\/ MARK: - ProvidersBridgeCatalog\.swift/);
   assert.doesNotMatch(materialized, /MultiProviderRouterControls|ProvidersConnectTest/);
-  assert.match(materialized, /One managed Desktop Bridge routes through independent Codex-LB and OpenRouter profiles/);
+  assert.match(materialized, /Connect your accounts and choose how Codex routes models/);
   assert.match(materialized, /\["bridge", "route", "explain", model, "--json"\]/);
   assert.match(materialized, /https:\/\/paseo\.sh\//);
   assert.match(materialized, /https:\/\/paseo\.sh\/docs/);
   assert.match(materialized, /Paseo \(recommended\)/);
-  assert.match(materialized, /Sneakoscope does not install it, bundle its daemon/);
+  assert.match(materialized, /Paseo is a separate, open-source app/);
   assert.doesNotMatch(materialized, /Telegram|BotFather|TELEGRAM_BOT_TOKEN/);
   assert.doesNotMatch(materialized, /model\.contains\("\/"\) \? model :/);
 });
@@ -168,7 +168,7 @@ test('Overview renders every release work-order health field from bounded local 
   for (const field of ['SKS install:', 'Codex CLI:', 'Codex app:', 'Menu Bar:', 'Updates:', 'MCP:', 'Last operation:']) {
     assert.match(overview, new RegExp(field));
   }
-  assert.ok(overview.includes('Menu Bar build \\(AppRuntime.packageVersion)'));
+  assert.match(overview, /NativeDisclosure\("Snapshot details", views: \[snapshotDetails, notificationInbox\]\)/);
   assert.ok(overview.includes('running build \\(menuBarBuild)'));
   assert.match(overview, /snapshotSource\(update\["source"\] as\? String\)/);
   assert.ok(overview.includes('notice: \\(error)'));
@@ -334,7 +334,7 @@ struct OverviewHarness {
     const sourceRoot = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources');
     const overview = path.join(sourceRoot, 'OverviewViewController.swift');
     const summary = path.join(sourceRoot, 'OverviewSummary.swift');
-    const compiled = spawnSync('swiftc', [summary, overview, harness, '-o', binary], { encoding: 'utf8' });
+    const compiled = spawnSync('swiftc', [summary, path.join(sourceRoot, 'NativeView.swift'), overview, harness, '-o', binary], { encoding: 'utf8' });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const executed = spawnSync(binary, [], { encoding: 'utf8' });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);
@@ -376,7 +376,7 @@ test('status item is concise and applies the documented integrity-to-healthy pri
 });
 
 test('Control Center scroll documents start at the top and stale local versions self-refresh', () => {
-  const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
+  const overview = ['NativeView.swift', 'OverviewViewController.swift'].map((name) => fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', name), 'utf8')).join('\n');
   assert.match(overview, /final class TopAlignedStackView: NSStackView/);
   assert.match(overview, /override var isFlipped: Bool \{ true \}/);
   assert.match(overview, /let stack = TopAlignedStackView\(views: views\)/);
@@ -405,6 +405,32 @@ test('confirmation and input flows use sheets and never nest modal loops', () =>
   assert.doesNotMatch(swift, /tell application "Terminal"|runInTerminal|runSksInTerminal/);
 });
 
+test('Center prioritizes account controls and keeps technical detail in native disclosures', () => {
+  const root = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources');
+  const providers = fs.readFileSync(path.join(root, 'ProvidersViewController.swift'), 'utf8');
+  const overview = fs.readFileSync(path.join(root, 'OverviewViewController.swift'), 'utf8');
+  const native = fs.readFileSync(path.join(root, 'NativeView.swift'), 'utf8');
+  const updates = fs.readFileSync(path.join(root, 'UpdatesViewController.swift'), 'utf8');
+  const settings = fs.readFileSync(path.join(root, 'SettingsViewController.swift'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(root, 'SidebarItem.swift'), 'utf8');
+  assert.match(providers, /let authPriorityToggle = NSSwitch\(\)/);
+  assert.match(providers, /makeAuthPriorityCard\(\),\s*makeProviderCredentialsCard\(\)/);
+  assert.match(providers, /\["bridge", "auth-priority", "status", "--json"\]/);
+  assert.match(providers, /\["bridge", "auth-priority", desired \? "on" : "off", "--json"\]/);
+  assert.match(providers, /authPriorityToggle\.state = previous \? \.on : \.off/);
+  assert.match(providers, /NativeDisclosure\("Models in Codex"/);
+  assert.match(providers, /NativeDisclosure\("Bridge diagnostics"/);
+  assert.match(native, /body\.isHidden = !expanded/);
+  assert.match(native, /toggle\.widthAnchor\.constraint\(equalTo: widthAnchor\)/);
+  assert.match(native, /content\.widthAnchor\.constraint\(equalTo: body\.widthAnchor\)/);
+  assert.match(overview, /row\.widthAnchor\.constraint\(equalTo: components\.widthAnchor\)/);
+  assert.match(updates, /snapshotSpinner\.startAnimation\(nil\)/);
+  assert.match(updates, /recoveryDetails\.isHidden = publicError == nil/);
+  assert.match(settings, /NativeDisclosure\("Advanced", views: \[contextCard\]\)/);
+  assert.match(sidebar, /case providers = "Providers"/);
+  assert.match(sidebar, /self == \.providers \? "Connections" : rawValue/);
+});
+
 test('Providers configures independent bridge profiles through masked stdin without exposing secrets', () => {
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = [
@@ -418,8 +444,8 @@ test('Providers configures independent bridge profiles through masked stdin with
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
   const appIdentity = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppIdentity.swift'), 'utf8');
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
-  assert.match(providers, /title: "Provider Credentials"/);
-  assert.match(providers, /Profiles coexist/);
+  assert.match(providers, /title: "Accounts"/);
+  assert.match(providers, /Manage each connection independently/);
   assert.match(providers, /NativeView\.button\(ProviderReconnectLabel\.codexLb/);
   assert.match(providers, /NativeView\.button\(ProviderReconnectLabel\.openRouter/);
   assert.match(providers, /#selector\(configureCodexLbProfile\)/);
@@ -507,7 +533,7 @@ test('Providers exposes one Desktop Bridge with strict v3 scoped evidence and ex
   const routeCards = fs.readFileSync(path.join(root, 'Sources', 'ProvidersBridgeCatalog.swift'), 'utf8');
   const providersSurface = `${providers}\n${routingTruth}\n${openRouter}\n${routeCards}`;
 
-  for (const label of ['Desktop Bridge', 'Provider Credentials', 'Combined Model Catalog', 'Routes', 'Capability Matrix']) {
+  for (const label of ['Desktop Bridge', 'Accounts', 'Combined Model Catalog', 'Routes', 'Capability Matrix']) {
     assert.match(providersSurface, new RegExp(label));
   }
   for (const removed of [
@@ -528,7 +554,7 @@ test('Providers exposes one Desktop Bridge with strict v3 scoped evidence and ex
   assert.match(providers, /case "not_attempted", "unsupported": return \.secondaryLabelColor/);
   assert.doesNotMatch(providersSurface, /deepEvidenceTrusted/);
   assert.match(providersSurface, /fallback none/);
-  assert.match(openRouter, /Profiles coexist/);
+  assert.match(openRouter, /Manage each connection independently/);
   assert.match(openRouter, /ChatGPT OAuth remain(?:s)? unchanged/);
 });
 
@@ -625,8 +651,8 @@ test('Remote Coding page recommends Paseo without owning its runtime boundary', 
   assert.match(remote, /https:\/\/paseo\.sh\//);
   assert.match(remote, /https:\/\/paseo\.sh\/docs/);
   assert.match(remote, /Paseo \(recommended\)/);
-  assert.match(remote, /independent open-source project/i);
-  assert.match(remote, /Sneakoscope does not install it, bundle its daemon/);
+  assert.match(remote, /separate, open-source app/i);
+  assert.match(remote, /Paseo is a separate, open-source app/);
   assert.match(remote, /setAccessibilityLabel\("Visit Paseo website"\)/);
   assert.match(remote, /setAccessibilityLabel\("Read Paseo documentation"\)/);
   assert.match(controlCenter, /\.remoteCoding: RemoteCodingViewController\(\)/);
@@ -659,7 +685,7 @@ test('MCP Control Center exposes scoped CRUD, health, OAuth, backups, policy edi
   }
   assert.match(swift, /Review is required before Apply/);
   assert.match(swift, /No secret values are included/);
-  assert.match(swift, /environment-variable names only/);
+  assert.match(swift, /Environment names — no values/);
   assert.match(swift, /oauthButton\.isEnabled = .*streamable-http/s);
   assert.match(swift, /guard selectedScope\(\) != "effective"/);
   assert.match(swift, /writableScopeForBackup\(\).*global.*project/s);
@@ -688,7 +714,7 @@ test('update UI reads the v3 snapshot and refreshes only through explicit refres
   assert.match(swift, /Update review cancelled\. No staged update was applied\./);
   assert.match(swift, /state: \.cancelled/);
   assert.match(swift, /Timer\.scheduledTimer\(withTimeInterval: 30, repeats: true\).*refreshLocalState\(\)/s);
-  assert.match(swift, /Rollback guidance and the previous Menu Bar app remain available/);
+  assert.match(swift, /NativeDisclosure\("Recovery details", views: \[remediation\]\)/);
   assert.match(swift, /No success state was assumed/);
 });
 

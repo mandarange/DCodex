@@ -33,13 +33,13 @@ export function renderNarutoUsage(): string {
     '  --model-provider NAME    Host config.toml provider block (host mode only).',
     '  --provider-env-key NAME  Environment-variable name used by that provider.',
     '  --parent-model NAME      Override the parent model identifier.',
-    '  --parent-effort TIER     GPT-5.6 parent: max (other host models may advertise other tiers).',
+    '  --parent-effort TIER     Astra parent default: max; use model-advertised tiers.',
     '  --subagent-model NAME    Override the child model identifier.',
-    '  --subagent-effort TIER   GPT-5.6: Luna/Terra max; Sol high|max.',
+    '  --subagent-effort TIER   Luna max; Astra medium|high|max by role.',
     '  --no-forced-login-method Do not inject a forced login method.',
     '  --json                   Emit machine-readable output.',
     '',
-    'Automatic fan-out starts at 4/6/8, or 16 for eligible mass Luna/Terra work.',
+    'Automatic fan-out starts at 4/6/8, or 16 for eligible mass mechanical or exploration work on the Luna/Astra Medium lanes.',
     'After decomposition, either lane may expand to 256 independent useful children.',
     'A measured lower Codex host or explicit provider/API limit remains authoritative.'
   ].join('\n')
@@ -65,7 +65,7 @@ export function buildNarutoHelpResult() {
     automatic_subagent_ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
     mass_automatic_subagent_ceiling: MAX_MASS_AUTOMATIC_SUBAGENT_COUNT,
     absolute_hard_frame_cap: 256,
-    fanout_contract: 'automatic fan-out starts at 4/6/8/16 for bounded, explicit-parallel, large-scale, and mass cheap-model Luna/Terra work; after decomposition both lanes may expand to the 256-child SKS ceiling, max_threads defaults to a 256-child frame budget that is a cap rather than a target, measured lower Codex host and explicit provider/API limits remain authoritative, and later waves reuse capacity',
+    fanout_contract: 'automatic fan-out starts at 4/6/8/16 for bounded, explicit-parallel, large-scale, and mass mechanical or exploration work on the Luna/Astra Medium lanes; after decomposition both lanes may expand to the 256-child SKS ceiling, max_threads defaults to a 256-child frame budget that is a cap rather than a target, measured lower Codex host and explicit provider/API limits remain authoritative, and later waves reuse capacity',
     automatic_reviewer_ceiling: MAX_AUTOMATIC_REVIEWER_COUNT,
     critical_multi_domain_reviewer_ceiling: MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT,
     max_threads_is_cap_not_target: true,
@@ -74,10 +74,11 @@ export function buildNarutoHelpResult() {
     triwiki_context: 'bounded_attention_use_first_with_on_demand_hydration',
     model_routing_policy: {
       luna_max: 'tiny_short_context_mechanical_and_mass_shards',
-      sol_high: 'ordinary_ui_logic_backend_and_native_implementation',
-      sol_max: 'review_debug_planning_architecture_security_database_research_release_and_judgment',
-      terra_max: 'broad_search_exploration_long_context_long_term_memory_large_first_draft_computer_use_browser_chrome_and_image_generation_execution',
-      mixed_slice_rule: 'split_execution_from_judgment_when_possible_otherwise_sol_max_wins'
+      // Legacy policy keys remain stable for persisted consumers; the active profiles use Astra.
+      sol_high: 'astra_high_ordinary_ui_logic_backend_and_native_implementation',
+      sol_max: 'astra_max_review_debug_planning_architecture_security_database_research_release_and_judgment',
+      terra_max: 'astra_medium_broad_search_exploration_long_context_long_term_memory_large_first_draft_computer_use_browser_chrome_and_image_generation_execution',
+      mixed_slice_rule: 'split_execution_from_judgment_when_possible_otherwise_astra_max_wins'
     },
     completion_evidence: {
       lifecycle_events: ['SubagentStart', 'SubagentStop'],

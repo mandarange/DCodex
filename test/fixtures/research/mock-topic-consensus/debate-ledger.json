@@ -1,4 +1,4 @@
 {
-  "consensus_iterations": 1,
-  "unanimous_consensus": true
+  "review_cycles": 1,
+  "review_complete": true
 }

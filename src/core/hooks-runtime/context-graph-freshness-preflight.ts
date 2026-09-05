@@ -34,7 +34,7 @@ import {
 } from '../triwiki/context-graph/compiler/cache-key.js';
 import { contextIndexFreshness } from '../triwiki/context-graph/store/index-freshness.js';
 import { readContextGraphMeta } from '../triwiki/context-graph/store/snapshot-store.js';
-import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
+import { alignGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 
 export const CONTEXT_GRAPH_FRESHNESS_PREFLIGHT_SCHEMA = 'sks.context-graph-freshness-preflight.v1';
 
@@ -109,7 +109,7 @@ export async function contextGraphFreshnessPreflight(
   options: ContextGraphFreshnessPreflightOptions = {}
 ): Promise<ContextGraphFreshnessPreflight> {
   const verifySources = options.verifySources !== false;
-  const extractors = options.extractors ?? codeNavigationGraphExtractors();
+  const extractors = options.extractors ?? alignGraphExtractors();
   const supplied = options.cacheKey ?? null;
   const metaLoad = await readContextGraphMeta(root);
   const meta = metaLoad.status === 'ok' ? metaLoad.meta : null;

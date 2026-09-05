@@ -13,7 +13,7 @@ import {
 import { recordSubagentEvent } from '../../subagents/subagent-evidence.js'
 import { writeVerifiedSuperSearchFixture } from './research-source-evidence-fixture.js'
 
-const reviewerIds = ['einstein', 'von_neumann', 'skeptic'] as const
+const reviewerIds = ['evidence', 'method', 'falsification'] as const
 
 function mockSource(id: string) {
   return { id, kind: 'selftest' }
@@ -32,7 +32,7 @@ const digestFixture = {
   blockers: []
 }
 
-test('mock adversarial loop records three composite structured outcomes without making genius or novelty guarantees', async () => {
+test('mock adversarial loop records three structured review dimensions without making novelty guarantees', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-research-adversarial-'))
   const plan = { mission_id: 'M-RESEARCH-ADVERSARIAL', prompt: 'bounded evidence research', artifacts: { research_paper: 'research-paper.md' } }
   const sources = Array.from({ length: 8 }, (_unused, index) => mockSource(`source-${index + 1}`))
@@ -44,11 +44,11 @@ test('mock adversarial loop records three composite structured outcomes without 
   assert.equal(result.gate.passed, true)
   assert.equal(result.plan.reviewer_count, reviewerIds.length)
   assert.deepEqual([...new Set(result.plan.reviewers.map((reviewer: any) => reviewer.custom_agent))], ['research_reviewer'])
+  assert.deepEqual([...new Set(result.plan.reviewers.map((reviewer: any) => reviewer.model_policy))], ['gpt-6-astra max'])
   assert.equal(result.gate.reviewer_count_observed, reviewerIds.length)
-  assert.equal(result.gate.genius_level_guaranteed, false)
   assert.equal(result.gate.novelty_guaranteed, false)
   const debate = JSON.parse(await fsp.readFile(path.join(dir, 'debate-ledger.json'), 'utf8'))
-  assert.equal(debate.unanimous_consensus, true)
+  assert.equal(debate.review_complete, true)
   assert.equal(debate.exchanges.length, reviewerIds.length)
 })
 
@@ -91,7 +91,6 @@ test('adversarial review stops when the same objection set survives a revision',
         }] : [],
         minor_objections: [],
         required_revisions: [],
-        eureka: { exclamation: 'Eureka!', idea: 'The objection is stable.', source_ids: ['source-1'] },
         falsifiers: ['Provide the missing control.'],
         cheap_probes: ['Inspect the control artifact.'],
         confidence: 'high',
@@ -131,7 +130,6 @@ test('structured reviewer convergence fails closed on a critical objection', () 
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: { exclamation: 'Eureka!', idea: 'bounded insight', source_ids: ['source-1'] },
     falsifiers: ['counterexample'],
     cheap_probes: ['probe'],
     confidence: 'high',
@@ -171,7 +169,6 @@ test('official reviewer parser rejects prose-wrapped parent JSON, wrong reviewer
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: { exclamation: 'Eureka!', idea: 'idea', source_ids: ['source-1'] },
     falsifiers: ['falsifier'],
     cheap_probes: ['probe'],
     confidence: 'high',
@@ -213,7 +210,6 @@ test('approve with a major objection remains blocked and revisable', () => {
     major_objections: index === 0 ? [{ id: 'major-1', severity: 'major' as const, claim_ids: ['claim-1'], source_ids: ['source-1'], reason: 'material flaw', required_revision: 'fix the material flaw' }] : [],
     minor_objections: [],
     required_revisions: [],
-    eureka: { exclamation: 'Eureka!' as const, idea: 'bounded insight', source_ids: ['source-1'] },
     falsifiers: ['counterexample'],
     cheap_probes: ['probe'],
     confidence: 'high' as const,
@@ -223,9 +219,33 @@ test('approve with a major objection remains blocked and revisable', () => {
   }))
   const result = evaluateReviewCycle({ reviewers, review_artifacts: digestFixture, blockers: [] }, new Set(['source-1']))
   assert.equal(result.ok, false)
-  assert.equal(result.open_objections, 1)
+  assert.equal(result.material_objections, 1)
   assert.equal(result.revisable, true)
   assert.ok(result.blockers.includes('major_objections_unresolved'))
+})
+
+test('minor objections remain visible without forcing another review cycle', () => {
+  const reviewers = reviewerIds.map((personaId, index) => ({
+    schema: 'sks.research-adversarial-reviewer-outcome.v1' as const,
+    persona_id: personaId,
+    verdict: 'approve' as const,
+    strongest_challenge: 'Attempted falsification',
+    evidence_source_ids: ['source-1'],
+    critical_objections: [],
+    major_objections: [],
+    minor_objections: index === 0 ? [{ id: 'minor-1', severity: 'minor' as const, claim_ids: ['claim-1'], source_ids: ['source-1'], reason: 'clarify wording', required_revision: 'clarify when convenient' }] : [],
+    required_revisions: [],
+    falsifiers: ['counterexample'],
+    cheap_probes: ['probe'],
+    confidence: 'high' as const,
+    review_artifact_bundle_sha256: digestFixture.bundle_sha256,
+    thread_id: `thread-${index + 1}`,
+    thread_status: 'completed' as const
+  }))
+  const result = evaluateReviewCycle({ reviewers, review_artifacts: digestFixture, blockers: [] }, new Set(['source-1']))
+  assert.equal(result.ok, true)
+  assert.equal(result.material_objections, 0)
+  assert.equal(result.advisory_objections, 1)
 })
 
 test('review convergence rejects stale artifact digests and source IDs outside the current ledger', () => {
@@ -239,7 +259,6 @@ test('review convergence rejects stale artifact digests and source IDs outside t
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: { exclamation: 'Eureka!' as const, idea: 'bounded insight', source_ids: ['source-1'] },
     falsifiers: ['counterexample'],
     cheap_probes: ['probe'],
     confidence: 'high' as const,
@@ -249,8 +268,8 @@ test('review convergence rejects stale artifact digests and source IDs outside t
   }))
   const result = evaluateReviewCycle({ reviewers, review_artifacts: digestFixture, blockers: [] }, new Set(['source-1']))
   assert.equal(result.ok, false)
-  assert.ok(result.blockers.includes('reviewer_artifact_bundle_sha256_mismatch:einstein'))
-  assert.ok(result.blockers.includes('reviewer_evidence_source_unknown:einstein:unknown-source'))
+  assert.ok(result.blockers.includes('reviewer_artifact_bundle_sha256_mismatch:evidence'))
+  assert.ok(result.blockers.includes('reviewer_evidence_source_unknown:evidence:unknown-source'))
 })
 
 test('real review convergence requires three distinct lifecycle-correlated official research_reviewer threads', async () => {
@@ -258,7 +277,7 @@ test('real review convergence requires three distinct lifecycle-correlated offic
   await fsp.mkdir(path.join(dir, '.codex', 'agents'), { recursive: true })
   await fsp.writeFile(path.join(dir, '.codex', 'agents', 'research-reviewer.toml'), [
     'name = "research_reviewer"',
-    'model = "gpt-5.6-sol"',
+    'model = "gpt-6-astra"',
     'model_reasoning_effort = "max"',
     'sandbox_mode = "read-only"'
   ].join('\n'))
@@ -300,7 +319,6 @@ test('real review convergence requires three distinct lifecycle-correlated offic
             major_objections: [],
             minor_objections: [],
             required_revisions: [],
-            eureka: { exclamation: 'Eureka!', idea: 'A bounded source-linked insight.', source_ids: [`source-${index + 1}`] },
             falsifiers: ['Remove the cited evidence.'],
             cheap_probes: ['Re-run the cited source check.'],
             confidence: 'high',
@@ -364,7 +382,7 @@ test('real adversarial review fails closed when the project research_reviewer co
 test('adversarial review uses one absolute cycle deadline and fails closed after it expires', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-research-adversarial-timeout-'))
   await fsp.mkdir(path.join(dir, '.codex', 'agents'), { recursive: true })
-  await fsp.writeFile(path.join(dir, '.codex', 'agents', 'research-reviewer.toml'), 'name = "research_reviewer"\nmodel = "gpt-5.6-sol"\nmodel_reasoning_effort = "max"\nsandbox_mode = "read-only"\n')
+  await fsp.writeFile(path.join(dir, '.codex', 'agents', 'research-reviewer.toml'), 'name = "research_reviewer"\nmodel = "gpt-6-astra"\nmodel_reasoning_effort = "max"\nsandbox_mode = "read-only"\n')
   const plan = { mission_id: 'M-RESEARCH-TIMEOUT', prompt: 'bounded evidence research', artifacts: { research_paper: 'research-paper.md' } }
   const sources = await writeVerifiedSuperSearchFixture(dir, ['source-1'], 'timeout')
   await fsp.writeFile(path.join(dir, 'source-ledger.json'), JSON.stringify({ sources, counterevidence_sources: [] }))
@@ -403,7 +421,7 @@ test('Research Honest Mode distinguishes disclaimers from English and Korean ove
   await fsp.writeFile(path.join(dir, 'research-report.md'), '이 연구는 아인슈타인급 천재성과 세계 최초 혁신 논문임을 보장한다.')
   const overclaim = await buildResearchHonestMode(dir, plan, 'real')
   assert.equal(overclaim.ok, false)
-  assert.ok(overclaim.blockers.some((blocker) => blocker.startsWith('unsupported_genius_or_novelty_claim:')))
+  assert.ok(overclaim.blockers.some((blocker) => blocker.startsWith('unsupported_research_overclaim:')))
 
   for (const text of [
     'This is a world-first breakthrough paper.',

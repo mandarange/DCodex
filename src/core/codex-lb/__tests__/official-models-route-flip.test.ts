@@ -249,3 +249,19 @@ test('official passthrough headers keep the client identity and never a bridge c
   assert.equal(ws.upgrade, 'websocket');
   assert.equal(ws['sec-websocket-key'], 'k');
 });
+
+
+test('authentication priority is opt-in and an unavailable provider cannot override the official choice', async () => {
+  const official = { enabled: true, models: 'passthrough' as const };
+  for (const [authPriorityEnabled, codexLbRegistered, expected] of [
+    [false, true, 'passthrough'], [true, true, 'gateway'], [true, false, 'passthrough'],
+  ] as const) {
+    assert.equal(await resolveEffectiveOfficialModelsMode(official, { home: '/unused', authPriorityEnabled, codexLbRegistered }), expected);
+  }
+  const settings = defaultDesktopBridgeServiceSettings({ auth_priority_enabled: true, official_passthrough: { ...official, base_url: 'https://chatgpt.com/backend-api/codex' } });
+  const reloaded = defaultDesktopBridgeServiceSettings(JSON.parse(serializedSettings(settings)));
+  assert.equal(reloaded.auth_priority_enabled, true);
+  assert.equal(reloaded.official_passthrough.models, 'passthrough');
+  assert.equal(defaultDesktopBridgeServiceSettings().auth_priority_enabled, false);
+  assert.throws(() => defaultDesktopBridgeServiceSettings({ auth_priority_enabled: 'true' as never }), /auth_priority_invalid/);
+});

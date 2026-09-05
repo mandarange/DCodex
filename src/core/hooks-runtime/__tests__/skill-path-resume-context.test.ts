@@ -148,7 +148,7 @@ test('UserPromptSubmit blocks a selected skill missing from the authoritative gl
   }
 });
 
-test('compact-resume SessionStart and the next PreToolUse refresh authoritative skill context', async () => {
+test('compact-resume SessionStart attaches authoritative skill context and PreToolUse only revalidates it', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-skill-path-resume-'));
   const home = path.join(fixture, 'home');
   const root = path.join(fixture, 'project');
@@ -211,12 +211,11 @@ test('compact-resume SessionStart and the next PreToolUse refresh authoritative 
       turn_id: 'active-resume-tool-turn'
     }, { root });
     const preToolOutput: any = normalizeHookResult('pre-tool', preToolResult);
-    assert.match(String(preToolOutput.hookSpecificOutput?.additionalContext || ''), new RegExp(escapeRegExp(naruto)));
-    assert.equal(preToolOutput.hookSpecificOutput?.hookEventName, 'PreToolUse');
-    assert.equal(preToolOutput.systemMessage, undefined);
+    assert.doesNotMatch(JSON.stringify(preToolOutput), new RegExp(escapeRegExp(naruto)));
+    assert.doesNotMatch(JSON.stringify(preToolOutput), /Authoritative SKS skill sources/);
+    assert.equal(preToolOutput.systemMessage, 'SKS: tool call inspected.');
     assert.equal((await validateCodexHookOutput('PreToolUse', preToolOutput)).ok, true);
     assert.equal(validatePreToolUseSemanticOutput(preToolOutput).ok, true);
-    assert.equal((String(preToolOutput.hookSpecificOutput.additionalContext).match(/Authoritative SKS skill sources/g) || []).length, 1);
     assert.equal((await loadStateForSession(root, sessionId)).official_subagent_run_id, workflowRunId);
     assert.doesNotMatch(JSON.stringify(preToolOutput), /지정된 SKS 스킬 경로가 현재 설치 위치와 달라/);
   } finally {

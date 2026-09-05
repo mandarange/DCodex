@@ -1,185 +1,5 @@
 import Cocoa
 
-/// Pages that should reload local status whenever the Control Center section becomes visible.
-protocol ControlCenterPage: AnyObject {
-    func refreshOnAppear()
-}
-
-final class TopAlignedStackView: NSStackView {
-    override var isFlipped: Bool { true }
-}
-
-enum NativeView {
-    static let statusTimeout: TimeInterval = 8
-    static let mutationTimeout: TimeInterval = 90
-    static let longMutationTimeout: TimeInterval = 60 * 60
-
-    static func title(_ value: String) -> NSTextField {
-        let field = NSTextField(labelWithString: value)
-        field.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
-        field.alignment = .left
-        field.setAccessibilityLabel(value)
-        field.setAccessibilityIdentifier("sks-center-heading-\(identifier(value))")
-        return field
-    }
-
-    static func detail(_ value: String) -> NSTextField {
-        let field = NSTextField(wrappingLabelWithString: value)
-        field.font = NSFont.systemFont(ofSize: 12)
-        field.textColor = .secondaryLabelColor
-        field.alignment = .left
-        // Long status and help copy must wrap inside the current window instead
-        // of contributing an intrinsic minimum width while users change pages.
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }
-
-    static func sectionTitle(_ value: String) -> NSTextField {
-        let field = NSTextField(labelWithString: value)
-        field.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        field.alignment = .left
-        field.setAccessibilityLabel(value)
-        return field
-    }
-
-    static func button(_ title: String, target: AnyObject, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
-        button.bezelStyle = .rounded
-        button.setAccessibilityLabel(title)
-        button.setAccessibilityIdentifier("sks-center-button-\(identifier(title))")
-        return button
-    }
-
-    static func stack(_ views: [NSView]) -> NSStackView {
-        let stack = TopAlignedStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 22, right: 24)
-        return stack
-    }
-
-    static func page(_ views: [NSView]) -> NSStackView {
-        let stack = stack(views)
-        stack.alignment = .width
-        for view in stack.arrangedSubviews {
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
-        }
-        return stack
-    }
-
-    static func row(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
-        let row = NSStackView(views: views)
-        row.orientation = .horizontal; row.alignment = .centerY; row.spacing = spacing
-        row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return row
-    }
-
-    static func card(title: String, subtitle: String, views: [NSView], fullWidthLeadingContent: Bool = false) -> NSBox {
-        let box = NSBox()
-        box.boxType = .custom; box.titlePosition = .noTitle
-        box.cornerRadius = 10; box.borderWidth = 1
-        box.borderColor = .separatorColor; box.fillColor = .controlBackgroundColor
-        box.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let heading = sectionTitle(title); let help = detail(subtitle)
-        let content = NSStackView(views: [heading, help] + views)
-        content.orientation = .vertical; content.alignment = .width
-        content.spacing = 10; content.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
-        content.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for view in content.arrangedSubviews {
-            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            view.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -32).isActive = true
-        }
-        content.translatesAutoresizingMaskIntoConstraints = false
-        box.contentView?.addSubview(content)
-        if let host = box.contentView {
-            NSLayoutConstraint.activate([
-                content.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-                content.trailingAnchor.constraint(equalTo: host.trailingAnchor),
-                content.topAnchor.constraint(equalTo: host.topAnchor),
-                content.bottomAnchor.constraint(equalTo: host.bottomAnchor)
-            ])
-        }
-        box.setAccessibilityLabel(title)
-        box.setAccessibilityHelp(subtitle)
-        box.setAccessibilityRole(.group)
-        box.setAccessibilityIdentifier("sks-center-card-\(identifier(title))")
-        return box
-    }
-
-    static func badge(_ text: String, color: NSColor) -> NSView {
-        let dot = NSTextField(labelWithString: "●")
-        dot.font = NSFont.systemFont(ofSize: 10)
-        dot.textColor = color
-        dot.setAccessibilityHidden(true)
-        let label = NSTextField(labelWithString: text)
-        label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        label.alignment = .left
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setAccessibilityLabel(text)
-        let row = NSStackView(views: [dot, label])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 5
-        return row
-    }
-
-    static func setBadge(_ view: NSView, text: String, color: NSColor) {
-        guard let row = view as? NSStackView, row.arrangedSubviews.count >= 2,
-              let dot = row.arrangedSubviews[0] as? NSTextField,
-              let label = row.arrangedSubviews[1] as? NSTextField else { return }
-        dot.textColor = color
-        label.stringValue = text
-        label.setAccessibilityLabel(text)
-    }
-
-    static func spinner(label: String) -> NSProgressIndicator {
-        let indicator = NSProgressIndicator()
-        indicator.style = .spinning
-        indicator.controlSize = .small
-        indicator.isDisplayedWhenStopped = false
-        indicator.setAccessibilityLabel(label)
-        return indicator
-    }
-
-    static func scrollable(_ document: NSView) -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
-        scroll.scrollerStyle = .overlay
-        scroll.borderType = .noBorder
-        scroll.autohidesScrollers = true
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        document.translatesAutoresizingMaskIntoConstraints = false
-        document.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        scroll.documentView = document
-        if let content = scroll.contentView.documentView {
-            NSLayoutConstraint.activate([
-                content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-                content.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
-                content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor)
-            ])
-        }
-        return scroll
-    }
-
-    static func redactPreview(_ output: String, limit: Int = 160) -> String {
-        let compact = output.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !compact.isEmpty else { return "No public detail was returned." }
-        if compact.count <= limit { return compact }
-        return String(compact.prefix(limit)) + "…"
-    }
-
-    private static func identifier(_ value: String) -> String {
-        value.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-    }
-}
 final class OverviewViewController: NSViewController, ControlCenterPage {
     private let processClient: ProcessClient
     private let operations: OperationCoordinator
@@ -188,6 +8,9 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     private let recoveryStatus = NativeView.detail("Progress recovery: no operation state loaded yet.")
     private let healthBadge = NativeView.badge("Checking local status", color: .systemBlue)
     private let statusSpinner = NativeView.spinner(label: "Checking SKS Center status")
+    private let snapshotDetails = NativeView.detail("")
+    private let components = NSStackView()
+    private var recoveryCard: NSBox!
     private var generation = 0
     private var completedGeneration = 0
     private var doctorButton: NSButton!
@@ -214,34 +37,40 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         let buttons = NativeView.row([refreshButton, doctorButton, updateCodexButton])
         let shortcuts = NativeView.row([
             NativeView.button("Remote Coding…", target: self, action: #selector(openRemoteCoding)),
-            NativeView.button("Providers…", target: self, action: #selector(openProviders)),
+            connectionsShortcut(),
             NativeView.button("Updates…", target: self, action: #selector(openUpdates)),
             NativeView.button("Diagnostics…", target: self, action: #selector(openDiagnostics))
         ])
         shortcuts.setAccessibilityLabel("Open Control Center sections")
+        components.orientation = .vertical
+        components.alignment = .width
+        components.spacing = 9
+        components.setAccessibilityIdentifier("sks-overview-components")
+        status.setAccessibilityIdentifier("sks-overview-next-action")
         let healthCard = NativeView.card(
-            title: "System health",
-            subtitle: "A bounded local snapshot of versions, services, and the latest operation.",
-            views: [NativeView.row([healthBadge, statusSpinner]), status, buttons]
+            title: "System health", subtitle: "",
+            views: [NativeView.row([healthBadge, statusSpinner]), status, components, buttons]
         )
-        let nextStepsCard = NativeView.card(
-            title: "Notifications & next steps",
-            subtitle: "Results remain available here even when macOS notifications are disabled.",
-            views: [notificationInbox, shortcuts]
-        )
-        let recoveryCard = NativeView.card(
-            title: "Progress, pause & recovery",
-            subtitle: "Time budgets are warnings, never automatic termination. Only transient network failures can auto-resume, at most twice. Authentication, mode, account binding, and external configuration always wait for explicit review.",
+        recoveryCard = NativeView.card(
+            title: "Progress, pause & recovery", subtitle: "Review the current operation before retrying.",
             views: [recoveryStatus, NativeView.row([reviewAndResumeButton])]
         )
+        recoveryCard.isHidden = true
         view = NativeView.page([
             NativeView.title("Overview"),
-            NativeView.detail("Menu Bar build \(AppRuntime.packageVersion) · Local health for SKS, Codex CLI, MCP, and operations. Prefer the latest Codex CLI; SKS stays version-agnostic and capability-gates features."),
+            NativeView.detail("Your local workspace at a glance."),
             healthCard,
             recoveryCard,
-            nextStepsCard
+            NativeView.card(title: "Quick access", subtitle: "", views: [shortcuts]),
+            NativeDisclosure("Snapshot details", views: [snapshotDetails, notificationInbox])
         ])
     }
+    private func connectionsShortcut() -> NSButton {
+        let button = NativeView.button("Connections…", target: self, action: #selector(openProviders))
+        button.setAccessibilityIdentifier("sks-center-button-providers")
+        return button
+    }
+
     @objc private func openRemoteCoding() { openSection?("Remote Coding") }
     @objc private func openProviders() { openSection?("Providers") }
     @objc private func openUpdates() { openSection?("Updates") }
@@ -412,36 +241,52 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
 
     private func renderStatus(update: [String: Any]?, mcp: [String: Any]?, partial: Bool) {
         let rendered = summary(update: update, mcp: mcp)
-        status.stringValue = rendered
+        snapshotDetails.stringValue = rendered
+        components.arrangedSubviews.forEach { components.removeArrangedSubview($0); $0.removeFromSuperview() }
+        for line in rendered.components(separatedBy: "\n") where !line.hasPrefix("Action:") && !line.hasPrefix("Last operation:") {
+            guard let separator = line.range(of: ": ") else { continue }
+            let key = NSTextField(labelWithString: String(line[..<separator.lowerBound]))
+            key.font = .systemFont(ofSize: 12, weight: .medium)
+            key.widthAnchor.constraint(equalToConstant: 88).isActive = true
+            let value = String(line[separator.upperBound...]).components(separatedBy: " · ").prefix(line.hasPrefix("MCP:") ? 2 : 1).joined(separator: " · ")
+            let valueField = NativeView.detail(value)
+            valueField.alignment = .right
+            valueField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            let row = NativeView.row([key, valueField])
+            components.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: components.widthAnchor).isActive = true
+        }
+        let needsAttention = rendered.localizedCaseInsensitiveContains("unavailable") || rendered.localizedCaseInsensitiveContains("needs attention") || ((mcp?["failed_count"] as? Int ?? 0) > 0)
+        let updatesAvailable = (update?["update_count"] as? Int ?? 0) > 0
+        status.stringValue = partial ? "Some checks are still running. You can keep working."
+            : needsAttention ? "Some checks need attention. Open Diagnostics to review them."
+            : updatesAvailable ? "Updates are available. Open Updates to review and install."
+            : "Local checks are current. Choose a connection or continue in Codex."
         renderRecoveryStatus(operations.latestSnapshot())
         if partial {
             NativeView.setBadge(healthBadge, text: "Partial status · still checking", color: .systemBlue)
-        } else if rendered.localizedCaseInsensitiveContains("unavailable")
-                    || rendered.localizedCaseInsensitiveContains("needs attention") {
+        } else if needsAttention {
             NativeView.setBadge(healthBadge, text: "Status refreshed · attention needed", color: .systemOrange)
         } else {
-            NativeView.setBadge(healthBadge, text: "Status refreshed", color: .systemGreen)
+            NativeView.setBadge(healthBadge, text: "Local checks complete", color: .systemGreen)
         }
     }
 
     private func renderRecoveryStatus(_ operation: OperationSnapshot?) {
+        let active = operation.map { ["queued", "running", "waitingForConfirmation", "pausedResumable", "warning"].contains($0.state.rawValue) } ?? false
+        let needsReview = operation?.recovery.map { $0.state == .pausedResumable || $0.state == .warning } ?? false
+        recoveryCard.isHidden = !active && !needsReview
         guard let operation = operation else {
             recoveryStatus.stringValue = "Progress recovery: no operation recorded · automatic resume inactive."
             reviewAndResumeButton.isEnabled = false
             return
         }
         guard let recovery = operation.recovery else {
-            recoveryStatus.stringValue = "Progress recovery: no pause/retry decision recorded for \(operation.kind) · critical path \(operation.stage ?? "unknown") · cache evidence not reported."
+            recoveryStatus.stringValue = "\(operation.publicSummary) · \(operation.stage ?? operation.state.rawValue)"
             reviewAndResumeButton.isEnabled = false
             return
         }
-        let cause = recovery.cause?.rawValue ?? "none"
-        let automatic = recovery.automaticResume ? "yes" : "no"
-        let mode = recovery.pinnedMode ?? "not reported"
-        let model = recovery.pinnedModel ?? "not reported"
-        let stall = recovery.stallReason.map { " · stop reason: \($0)" } ?? ""
-        let attempt = recovery.recoveryAttempt.map { " · recovery: \($0)" } ?? ""
-        recoveryStatus.stringValue = "State \(recovery.state.rawValue) · progress \(recovery.lastProgressSignal.rawValue) at \(recovery.lastProgressAt) · cause \(cause) · auto resume \(automatic) · retry \(recovery.retryCount)/\(recovery.maxAutomaticRetries) · critical path \(operation.stage ?? "unknown") · mode \(mode) · model \(model) · account \(recovery.accountBinding) · evidence \(recovery.evidenceIntegrity)\(stall)\(attempt) · next: \(recovery.nextAction)"
+        recoveryStatus.stringValue = "\(operation.publicSummary)\n\(recovery.nextAction)"
         reviewAndResumeButton.isEnabled = recovery.state == .pausedResumable || recovery.state == .warning
         reviewAndResumeButton.toolTip = reviewAndResumeButton.isEnabled
             ? "Open the owning section for explicit review; this button never changes authentication, mode, account, or evidence."

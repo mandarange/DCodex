@@ -19,8 +19,6 @@ export interface GateManifestEntry {
 export const FORBIDDEN_RECURSIVE_GATES = new Set<string>([
   'release:check',
   'release:check:parallel',
-  'release:check:dynamic',
-  'release:check:dynamic:execute',
   'release:real-check',
   'release:publish',
   'publish:npm',
@@ -40,7 +38,6 @@ export const ALWAYS_ON_GATES = new Set<string>([
   'migration:upgrade-safety',
   'release:proof-truth',
   'release:latency-slo',
-  'release:dynamic-performance',
   'release:provenance',
   'changelog:check'
 ])

@@ -15,19 +15,19 @@ import {
   decideSubagentModel
 } from '../model-policy.js'
 import { decideOfficialSubagentModel } from '../../agents/agent-effort-policy.js'
-import { routeModel, routeNarutoGpt56Model } from '../../provider/model-router.js'
+import { routeModel, routeNarutoGpt56Model, childInheritsActiveMainModel } from '../../provider/model-router.js'
 
 test('official parent and four child profiles expose the sealed model/effort matrix', () => {
-  assert.equal(NARUTO_PARENT_MODEL, 'gpt-5.6-sol')
+  assert.equal(NARUTO_PARENT_MODEL, 'gpt-6-astra')
   assert.equal(NARUTO_PARENT_EFFORT, 'max')
-  assert.equal(DEFAULT_SUBAGENT_MODEL, 'gpt-5.6-sol')
+  assert.equal(DEFAULT_SUBAGENT_MODEL, 'gpt-6-astra')
   assert.equal(DEFAULT_SUBAGENT_EFFORT, 'high')
-  assert.equal(THINKING_SUBAGENT_MODEL, 'gpt-5.6-sol')
+  assert.equal(THINKING_SUBAGENT_MODEL, 'gpt-6-astra')
   assert.equal(SUBAGENT_EFFORT, 'max')
   assert.equal(LUNA_SUBAGENT_MODEL, 'gpt-5.6-luna')
   assert.equal(LUNA_SUBAGENT_EFFORT, 'max')
-  assert.equal(TERRA_SUBAGENT_MODEL, 'gpt-5.6-terra')
-  assert.equal(TERRA_SUBAGENT_EFFORT, 'max')
+  assert.equal(TERRA_SUBAGENT_MODEL, 'gpt-6-astra')
+  assert.equal(TERRA_SUBAGENT_EFFORT, 'medium')
   assert.equal(SOL_MAX_SUBAGENT_EFFORT, 'max')
 })
 
@@ -52,7 +52,7 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'sol_high_implementation', description)
-    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
     assert.equal(decision.modelReasoningEffort, 'high', description)
   }
 
@@ -70,8 +70,8 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'terra_max_context_tools', description)
-    assert.equal(decision.model, 'gpt-5.6-terra', description)
-    assert.equal(decision.modelReasoningEffort, 'max', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
+    assert.equal(decision.modelReasoningEffort, 'medium', description)
   }
 
   for (const description of [
@@ -91,7 +91,7 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   }
 })
 
-test('mass/broad search and exploration route to Terra while tiny typing shards stay on Luna', () => {
+test('mass/broad search and exploration route to Astra Medium while tiny typing shards stay on Luna', () => {
   for (const description of [
     'Mass search across the whole repository for every call site',
     'Bulk scan of many files to build an export inventory',
@@ -106,8 +106,8 @@ test('mass/broad search and exploration route to Terra while tiny typing shards 
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'terra_max_context_tools', description)
-    assert.equal(decision.model, 'gpt-5.6-terra', description)
-    assert.equal(decision.modelReasoningEffort, 'max', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
+    assert.equal(decision.modelReasoningEffort, 'medium', description)
   }
 
   // Tiny typing-level shards stay on Luna even when the surrounding sentence
@@ -128,7 +128,7 @@ test('mass/broad search and exploration route to Terra while tiny typing shards 
   }
 })
 
-test('mass-lane keywords never pull judgment or clear implementation off the Sol lanes', () => {
+test('mass-lane keywords never pull judgment or clear implementation off the Astra implementation and judgment profiles', () => {
   for (const description of [
     'Security review of the database release plan',
     'Debug the failing migration before release',
@@ -136,7 +136,7 @@ test('mass-lane keywords never pull judgment or clear implementation off the Sol
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'sol_max_judgment', description)
-    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
     assert.equal(decision.modelReasoningEffort, 'max', description)
   }
 
@@ -147,7 +147,7 @@ test('mass-lane keywords never pull judgment or clear implementation off the Sol
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'sol_high_implementation', description)
-    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
     assert.equal(decision.modelReasoningEffort, 'high', description)
   }
 })
@@ -162,7 +162,7 @@ test('judgment wins mixed or ambiguous work and Luna is excluded from long conte
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'sol_max_judgment', description)
-    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
     assert.equal(decision.modelReasoningEffort, 'max', description)
   }
 
@@ -179,14 +179,14 @@ test('clear docs exploration and implementation intent outrank incidental judgme
     description: 'Read the latest Codex CLI and Desktop app documentation, explore the repository, and compare the architecture notes'
   })
   assert.equal(docsExploration.policy, 'terra_max_context_tools')
-  assert.equal(docsExploration.model, 'gpt-5.6-terra')
-  assert.equal(docsExploration.modelReasoningEffort, 'max')
+  assert.equal(docsExploration.model, 'gpt-6-astra')
+  assert.equal(docsExploration.modelReasoningEffort, 'medium')
 
   const boundedImplementation = decideSubagentModel({
     description: 'Implement the bounded scheduler fix; the architecture review and debug context are already resolved'
   })
   assert.equal(boundedImplementation.policy, 'sol_high_implementation')
-  assert.equal(boundedImplementation.model, 'gpt-5.6-sol')
+  assert.equal(boundedImplementation.model, 'gpt-6-astra')
   assert.equal(boundedImplementation.modelReasoningEffort, 'high')
 
   const finalHighRiskJudgment = decideSubagentModel({
@@ -277,60 +277,67 @@ test('official effort policy applies the sealed four-profile routing matrix', ()
   })
 
   assert.deepEqual([mechanical.model, mechanical.model_reasoning_effort], ['gpt-5.6-luna', 'max'])
-  assert.deepEqual([implementation.model, implementation.model_reasoning_effort], ['gpt-5.6-sol', 'high'])
-  assert.deepEqual([context.model, context.model_reasoning_effort], ['gpt-5.6-terra', 'max'])
-  assert.deepEqual([review.model, review.model_reasoning_effort], ['gpt-5.6-sol', 'max'])
+  assert.deepEqual([implementation.model, implementation.model_reasoning_effort], ['gpt-6-astra', 'high'])
+  assert.deepEqual([context.model, context.model_reasoning_effort], ['gpt-6-astra', 'medium'])
+  assert.deepEqual([review.model, review.model_reasoning_effort], ['gpt-6-astra', 'max'])
 })
 
 test('Naruto automatic routing uses the exact selected profile and fails closed', () => {
   const catalog = {
-    availableModels: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'],
+    availableModels: ['gpt-5.6-luna', 'gpt-6-astra'],
     availableModelEfforts: {
       'gpt-5.6-luna': ['max'],
-      'gpt-5.6-terra': ['max'],
-      'gpt-5.6-sol': ['high', 'max']
+      'gpt-6-astra': ['medium', 'high', 'max']
     }
   }
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'exact one-line single-file rename' }), {
     model: 'gpt-5.6-luna', reasoning: 'max', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser logic' }), {
-    model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'high', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'browser QA in Chrome' }), {
-    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'medium', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'UI debugging review' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   })
   assert.equal(routeNarutoGpt56Model({
     taskText: 'browser QA in Chrome',
-    availableModels: ['gpt-5.6-terra'],
-    availableModelEfforts: { 'gpt-5.6-terra': ['medium'] }
+    availableModels: ['gpt-6-astra'],
+    availableModelEfforts: { 'gpt-6-astra': ['max'] }
   }).model, '')
 })
 
-test('explicit family models keep their allowed effort profile', () => {
+test('explicit Astra selects medium, high, or max from the task profile', () => {
   const catalog = {
-    availableModels: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'],
+    availableModels: ['gpt-5.6-luna', 'gpt-6-astra'],
     availableModelEfforts: {
       'gpt-5.6-luna': ['max'],
-      'gpt-5.6-terra': ['max'],
-      'gpt-5.6-sol': ['high', 'max']
+      'gpt-6-astra': ['medium', 'high', 'max']
     }
   }
-  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser', explicitModel: 'gpt-5.6-terra' }), {
-    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
+  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'browser QA', explicitModel: 'gpt-6-astra' }), {
+    model: 'gpt-6-astra', reasoning: 'medium', serviceTier: 'fast'
   })
-  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser', explicitModel: 'gpt-5.6-sol' }), {
-    model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
+  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser', explicitModel: 'gpt-6-astra' }), {
+    model: 'gpt-6-astra', reasoning: 'high', serviceTier: 'fast'
   })
-  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'security review', explicitModel: 'gpt-5.6-sol' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'security review', explicitModel: 'gpt-6-astra' }), {
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   })
 })
 
 test('generic routing preserves an arbitrary explicit non-Naruto model', async () => {
   const choice = await routeModel('agentic', { model: 'future-codex-model' })
   assert.equal(choice.model, 'future-codex-model')
+})
+
+
+test('Astra parent preserves child role routing and third-party provider continuity', () => {
+  assert.equal(childInheritsActiveMainModel('gpt-6-astra'), false)
+  assert.equal(childInheritsActiveMainModel('gpt-5.6-sol'), false)
+  assert.equal(childInheritsActiveMainModel('gpt-5.6-terra'), false)
+  assert.equal(childInheritsActiveMainModel('gpt-5.6-luna'), false)
+  assert.equal(childInheritsActiveMainModel('anthropic/claude-sonnet-4.5'), true)
 })

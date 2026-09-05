@@ -22,6 +22,8 @@ import type { LastDiagnostic } from './diagnostics.js';
 
 export type DesktopBridgeControllerRequestV3 =
   | { operation: 'status' }
+  | { operation: 'auth-priority.status' }
+  | { operation: 'auth-priority.set'; enabled: boolean }
   | { operation: 'ensure' }
   | { operation: 'repair' }
   | { operation: 'verify'; level: CapabilityRequestedLevel }
@@ -102,6 +104,7 @@ export type ControllerPaths = {
 };
 
 export type ControllerCore = {
+  authPriorityEnabled?: boolean;
   paths: ControllerPaths;
   checkedAt: string;
   config: string;

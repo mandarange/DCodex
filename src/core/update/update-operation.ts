@@ -164,7 +164,7 @@ export class UpdateOperationRecorder {
     this.receipt.current_stage = id;
     this.receipt.updated_at = now;
     const skippedSideEffect = /^(dry_run|skipped(?:_|$)|already_current)/.test(stage.status);
-    if (['global_install', 'menubar_rebuild'].includes(id) && !skippedSideEffect) {
+    if (['global_install', 'new_version_doctor', 'menubar_rebuild'].includes(id) && !skippedSideEffect) {
       this.receipt.side_effects_started = true;
     }
     this.enqueueWrite();

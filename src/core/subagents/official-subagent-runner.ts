@@ -359,6 +359,7 @@ function confineHostCapabilityEvidenceSecrets(
 }
 
 export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflowInput): Promise<any> {
+  const credentialPolicy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
   const hostCapabilityRequest = requestHostCapabilities(input.goal)
   const base = {
     schema: OFFICIAL_SUBAGENT_WORKFLOW_SCHEMA,
@@ -366,8 +367,8 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     requested_subagents: input.requestedSubagents,
     max_threads: input.maxThreads,
     max_depth: 1,
-    parent_model: NARUTO_PARENT_MODEL,
-    parent_reasoning_effort: NARUTO_PARENT_EFFORT,
+    parent_model: credentialPolicy.parentModel,
+    parent_reasoning_effort: credentialPolicy.parentEffort,
     session_scope: input.sessionKey || null,
     host_capability_request: hostCapabilityRequest
   }
@@ -478,7 +479,6 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     ? sourceEnv
     : await (input.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({ env: sourceEnv })
   const runtimeEnv = stripRetiredDirectProviderEnv(preparedRuntimeEnv)
-  const credentialPolicy: NarutoCredentialPolicy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
   const inheritedSecretValues = knownInheritedSecretValues(runtimeEnv)
   const childEnv = buildOfficialSubagentChildEnv({
     env: runtimeEnv,

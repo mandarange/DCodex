@@ -29,6 +29,8 @@ const MAX_STDIN_SECRET_BYTES = 64 * 1024;
 
 export type BridgeCommandRequest =
   | { operation: 'status' }
+  | { operation: 'auth-priority.status' }
+  | { operation: 'auth-priority.set'; enabled: boolean }
   | { operation: 'serve'; settings_path: string }
   | { operation: 'ensure' }
   | { operation: 'repair' }
@@ -101,6 +103,7 @@ export function usage(command = 'bridge'): string {
   return [
     `Usage: sks ${command} status [--json]`,
     `       sks ${command} ensure|repair [--json]`,
+    `       sks ${command} auth-priority status|on|off [--json]`,
     `       sks ${command} verify --level shallow|transport|deep [--strict|--require-ready] [--json]`,
     `       sks ${command} provider list [--json]`,
     `       sks ${command} provider configure codex-lb --host <host> --api-key-stdin [--json]`,
@@ -213,6 +216,13 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
   const json = parsed.flags.has('--json');
   const strict = parsed.flags.has('--strict') || parsed.flags.has('--require-ready');
   const base = { json, strict, secrets: [] as string[] };
+
+  if (area === 'auth-priority' && target === undefined && (action === 'status' || action === 'on' || action === 'off')) {
+    allowOnly(parsed, ['--json'], []);
+    return { ...base, request: action === 'status'
+      ? { operation: 'auth-priority.status' }
+      : { operation: 'auth-priority.set', enabled: action === 'on' }, label: 'Codex-LB authentication priority' };
+  }
 
   if (area === 'status' && action === undefined) {
     allowOnly(parsed, ['--json'], []);

@@ -11,7 +11,7 @@ test('Research prepare/status expose official subagent adversarial convergence',
   const prepared = await runSksInRoot(root, ['research', 'prepare', 'native research batch fixture', '--json']);
   assert.equal(prepared.official_subagent_plan.workflow, 'official_codex_subagent');
   assert.equal(prepared.official_subagent_plan.reviewer_count, EXPECTED_REVIEWER_COUNT);
-  assert.equal(prepared.official_subagent_plan.guarantees.genius_level, false);
+  assert.deepEqual(prepared.official_subagent_plan.reviewers.map((reviewer) => reviewer.id), ['evidence', 'method', 'falsification']);
 
   const run = await runSksInRoot(root, ['research', 'run', prepared.mission_id, '--mock', '--json']);
   assert.equal(run.ok, true);

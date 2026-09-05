@@ -54,6 +54,7 @@ enum ExposureModelFilter {
 extension ProvidersViewController: NSTableViewDataSource, NSTableViewDelegate {
     func makeModelExposureCard() -> NSBox {
         exposureSearchField.placeholderString = "Filter OpenRouter models"
+        exposureSearchField.delegate = self
         exposureSearchField.target = self
         exposureSearchField.action = #selector(exposureSearchChanged)
         exposureSearchField.setAccessibilityIdentifier("sks-provider-exposure-search")
@@ -76,8 +77,8 @@ extension ProvidersViewController: NSTableViewDataSource, NSTableViewDelegate {
         let clear = NativeView.button("Clear Selection", target: self, action: #selector(clearModelExposure))
         clear.setAccessibilityIdentifier("sks-provider-exposure-clear")
         let card = NativeView.card(
-            title: "Codex Picker Exposure",
-            subtitle: "Every Codex-LB model is always exposed. Choose which OpenRouter models join them, then apply — the Codex model picker reads the rebuilt catalog on its next launch.",
+            title: "Models in Codex",
+            subtitle: "All Codex-LB models are included. Select OpenRouter models, apply, then relaunch Codex to update its picker.",
             views: [exposureStatus, exposureSearchField, scroll, ControlKit.actionRow([exposureApplyButton, clear])]
         )
         card.setAccessibilityIdentifier("sks-provider-card-model-exposure")
@@ -100,6 +101,10 @@ extension ProvidersViewController: NSTableViewDataSource, NSTableViewDelegate {
             self.exposureStatus.textColor = .secondaryLabelColor
             self.exposureTable.reloadData()
         }
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        if notification.object as? NSTextField === exposureSearchField { exposureSearchChanged() }
     }
 
     @objc func exposureSearchChanged() {

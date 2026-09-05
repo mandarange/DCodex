@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  type SksUpdateNowOptions,
   UPDATE_STAGE_ORDER,
   runSksUpdateNow,
   runSksUpdateReview,
@@ -20,6 +21,7 @@ import {
   UpdateOperationRecorder,
   updateOperationLastInstallPath
 } from '../update/update-operation.js';
+import { PACKAGE_VERSION } from '../fsx.js';
 import { updateMigrationLockIsStale } from '../update/update-migration-state.js';
 
 test('update review exposes the target, paths, rollback command, and documented stages without mutation', async () => {
@@ -87,9 +89,7 @@ test('already-current update succeeds and carries a bounded guidance warning thr
   const fixture = await updateFailureFixture('success');
   try {
     await createFlatDirectories(fixture.options.projectRoot, 5_001);
-    const options: any = { ...fixture.options };
-    delete options.version;
-    options.env = { ...fixture.options.env, SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '6.2.0' };
+    const options = await currentUpdateOptions(fixture);
     const result = await runSksUpdateNow(options);
     assert.equal(result.status, 'current', result.error || result.status);
     const ids = result.stages.map((stage) => stage.id);
@@ -121,17 +121,15 @@ test('already-current update succeeds and carries a bounded guidance warning thr
 test('already-current finalize Doctor preserves structured config-adopt blockers in the operation error', async () => {
   const fixture = await updateFailureFixture('success');
   try {
-    const options: any = { ...fixture.options };
-    delete options.version;
+    const options = await currentUpdateOptions(fixture);
     options.env = {
-      ...fixture.options.env,
-      SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '6.2.0',
+      ...options.env,
       SKS_TEST_FINALIZE_DOCTOR_USER_CONFIG_PRESERVED: '1'
     };
     const result = await runSksUpdateNow(options);
-    assert.equal(result.status, 'current');
+    assert.equal(result.status, 'failed');
     assert.equal(result.ok, false);
-    assert.equal(result.error, 'current-version repair verification failed: update_finalize_doctor');
+    assert.match(result.error || '', /update_finalize_doctor/);
     const finalizeDoctor = result.stages.find((stage) => stage.id === 'update_finalize_doctor');
     assert.deepEqual(finalizeDoctor?.detail?.required_blockers, [
       'project:user_owned_file_without_sks_marker',
@@ -144,6 +142,25 @@ test('already-current finalize Doctor preserves structured config-adopt blockers
     assert.ok(operation.public_error.includes('# SKS-MANAGED-CODEX-CONFIG'));
     assert.ok(operation.public_error.includes('sks config adopt'));
     assert.doesNotMatch(operation.public_error, /current-version repair verification failed/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('already-current update rejects a stale doctor receipt even when final health checks pass', async () => {
+  const fixture = await updateFailureFixture('success');
+  try {
+    const options = await currentUpdateOptions(fixture);
+    const first = await runSksUpdateNow(options);
+    assert.equal(first.ok, true, first.error || JSON.stringify(first.stages));
+    const second = await runSksUpdateNow({ ...options, env: { ...options.env, SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '0' } });
+    assert.equal(second.ok, false);
+    assert.equal(second.status, 'failed');
+    assert.equal(second.migration_current, false);
+    const receiptStage = second.stages.find((stage) => stage.id === 'project_receipt');
+    assert.equal(receiptStage?.ok, false);
+    assert.equal(receiptStage?.detail?.error, 'new_version_doctor_receipt_missing_or_stale');
+    assert.equal(second.rollback.available, false);
   } finally {
     await fixture.cleanup();
   }
@@ -823,7 +840,7 @@ async function updateFailureFixture(mode: 'success' | 'fail' | 'hang') {
     `#!${process.execPath}`,
     "import path from 'node:path';",
     "const args = process.argv.slice(2);",
-    "if (args[0] === 'list' && args[1] === '-g') { console.log(JSON.stringify({ dependencies: { sneakoscope: { version: '6.2.0' } } })); process.exit(0); }",
+    "if (args[0] === 'list' && args[1] === '-g') { console.log(JSON.stringify({ dependencies: { sneakoscope: { version: process.env.SKS_FAKE_CURRENT_VERSION || '6.2.0' } } })); process.exit(0); }",
     `if (args[0] === 'root') { console.log(${JSON.stringify(globalRoot)}); process.exit(0); }`,
     "if (args[0] === 'install' && args[1] === '--global') {",
     `  if (${JSON.stringify(mode)} === 'fail') process.exit(7);`,
@@ -867,4 +884,26 @@ async function createFlatDirectories(root: string, count: number): Promise<void>
       (_, offset) => fs.mkdir(path.join(root, `workspace-${String(start + offset).padStart(5, '0')}`))
     ));
   }
+}
+
+
+async function currentUpdateOptions(fixture: Awaited<ReturnType<typeof updateFailureFixture>>): Promise<SksUpdateNowOptions & { env: NodeJS.ProcessEnv }> {
+  const packageRoot = path.join(fixture.root, 'node_modules', 'sneakoscope');
+  const entrypoint = path.join(packageRoot, 'dist', 'bin', 'sks.js');
+  await fs.mkdir(path.dirname(entrypoint), { recursive: true });
+  await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: PACKAGE_VERSION, bin: { sks: 'dist/bin/sks.js' } }));
+  await fs.writeFile(entrypoint, `#!${process.execPath}\nconsole.log(${JSON.stringify(PACKAGE_VERSION)});\n`, { mode: 0o755 });
+  await fs.symlink(entrypoint, path.join(fixture.root, 'sks'));
+  return {
+    ...fixture.options,
+    version: null,
+    env: {
+      ...fixture.options.env,
+      HOME: process.env.HOME,
+      PATH: `${fixture.root}${path.delimiter}/usr/bin:/bin`,
+      SKS_FAKE_CURRENT_VERSION: PACKAGE_VERSION,
+      SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: PACKAGE_VERSION,
+      SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1'
+    }
+  };
 }

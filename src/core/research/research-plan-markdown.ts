@@ -14,7 +14,7 @@ export function renderResearchPlanMarkdown(plan: any, helpers: {
   }
   if (plan.execution_policy) {
     lines.push(`Execution: ${plan.execution_policy.normal_run}; default cycle timeout ${plan.execution_policy.default_cycle_timeout_minutes} minutes`)
-    if (plan.execution_policy.default_max_cycles) lines.push(`Adversarial review loop: run three independent official research_reviewer threads, revise on any objection, then run a fresh three-thread cycle; default safety cap ${plan.execution_policy.default_max_cycles} cycles`)
+    if (plan.execution_policy.default_max_cycles) lines.push(`Adversarial review loop: run three independent official research_reviewer threads, revise critical, major, or required findings, then run a fresh three-thread cycle; default safety cap ${plan.execution_policy.default_max_cycles} cycles`)
     lines.push(`Mock policy: ${plan.execution_policy.mock_policy}`)
   }
   if (plan.mutation_policy) lines.push(`Mutation policy: ${plan.mutation_policy.rule}`)
@@ -50,9 +50,9 @@ export function renderResearchPlanMarkdown(plan: any, helpers: {
   for (const rule of plan.rules) lines.push(`- ${rule}`)
   lines.push('')
   if (plan.research_council?.agents?.length) {
-    lines.push('## Genius Agent Council')
+    lines.push('## Independent Review Dimensions')
     lines.push(`Policy: ${plan.research_council.policy}`)
-    for (const agent of plan.research_council.agents) lines.push(`- ${helpers.researchAgentAgentName(agent)}: ${agent.persona || agent.role} - ${agent.mandate} (${agent.persona_boundary || 'persona-inspired lens only'})`)
+    for (const agent of plan.research_council.agents) lines.push(`- ${helpers.researchAgentAgentName(agent)}: ${agent.persona || agent.role} - ${agent.mandate} (${agent.persona_boundary || 'assigned review dimension'})`)
     lines.push('')
   }
   if (plan.web_research_policy) {
@@ -105,11 +105,11 @@ export function renderResearchSourceSkillMarkdown(plan: any, defaultLayers: read
   lines.push('- Do not modify repository source code or generated harness files during Research; write only route-local mission artifacts.')
   lines.push('')
   lines.push('## Official Reviewer Use')
-  lines.push('- Only source-ledger ids with correlated verified-content Super Search proof may support a real-run reviewer finding or Eureka idea.')
-  lines.push('- Run exactly three independent official `research_reviewer` threads on GPT-5.6 Sol Max: Einstein, von Neumann, and Skeptic composite lenses.')
+  lines.push('- Only source-ledger ids with correlated verified-content Super Search proof may support a real-run reviewer finding.')
+  lines.push('- Run exactly three independent official `research_reviewer` threads covering evidence integrity, method validity, and falsification or replication.')
   lines.push('- The skeptic lens must challenge the strongest claim using counterevidence or source-quality downgrades.')
-  lines.push('- Any objection triggers a mission-local `research_synthesizer` revision followed by a fresh three-thread review cycle; do not launch a custom scheduler or debate pool.')
-  lines.push('- `agent-ledger.json` and `debate-ledger.json` are compatibility projections from official reviewer outcomes. Canonical convergence requires three trustworthy parent outcomes and zero unresolved objections.')
+  lines.push('- Critical, major, or required revisions trigger a mission-local `research_synthesizer` revision followed by a fresh three-thread review cycle; minor concerns remain advisory.')
+  lines.push('- `agent-ledger.json` and `debate-ledger.json` are compatibility projections from official reviewer outcomes. Canonical convergence requires three trustworthy parent outcomes and no unresolved material objection.')
   lines.push('- Synthesis keeps only claims that survive cross-layer triangulation and falsification.')
   lines.push('')
   return `${lines.join('\n')}\n`

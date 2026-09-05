@@ -468,6 +468,7 @@ test('native reliability source binds menu-open expiry, status keys, and receipt
   const sourceRoot = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources');
   const statusItem = await fs.readFile(path.join(sourceRoot, 'StatusItemController.swift'), 'utf8');
   const overview = [
+    await fs.readFile(path.join(sourceRoot, 'NativeView.swift'), 'utf8'),
     await fs.readFile(path.join(sourceRoot, 'OverviewViewController.swift'), 'utf8'),
     await fs.readFile(path.join(sourceRoot, 'OverviewSummary.swift'), 'utf8')
   ].join('\n');
@@ -497,8 +498,9 @@ test('native reliability source binds menu-open expiry, status keys, and receipt
   assert.match(updates, /Post-update reconciliation: incomplete/);
   assert.match(updates, /No success state was assumed/);
   assert.match(processClient, /maximumTimeout: TimeInterval = 60 \* 60/);
-  assert.match(updates, /Menu Bar expected .*expected_version.*installed .*installed_version/s);
-  assert.match(updates, /Last checked .*generatedAt.*expires .*expiresAt/s);
+  assert.match(updates, /Menu Bar .*installed_version.*rebuild_required/s);
+  assert.match(updates, /SKSTimestamp\.date\(from: expiresAt\)/);
+  assert.match(updates, /Last checked .*generatedAt.*expired.*check again for current status/s);
   assert.match(updates, /Rollback .*receipt\.rollbackCommand/);
   assert.match(updates, /state: \.terminalUncertain/);
   assert.match(processClient, /environment: \[String: String\] = \[:\]/);

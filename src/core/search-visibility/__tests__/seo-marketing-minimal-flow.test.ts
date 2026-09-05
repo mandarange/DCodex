@@ -90,8 +90,11 @@ async function makeMarketingRoot(): Promise<string> {
   }, null, 2));
   await fsp.writeFile(path.join(root, 'README.md'), '# Sneakoscope Fixture\n\nUse `sks seo-geo-optimizer` for search visibility proof.\n');
   await fsp.writeFile(path.join(root, 'CHANGELOG.md'), '# Changelog\n');
+  await fsp.mkdir(path.join(root, 'src', 'core'), { recursive: true });
+  await fsp.writeFile(path.join(root, 'src', 'core', 'routes.ts'), 'export const ROUTES = ["naruto"]\n');
+  await fsp.mkdir(path.join(root, 'src', 'core', 'agents'), { recursive: true });
+  await fsp.writeFile(path.join(root, 'src', 'core', 'agents', 'agent-orchestrator.ts'), 'export async function runNativeAgentOrchestrator() {}\n');
   await fsp.writeFile(path.join(root, '.sneakoscope', 'reports', 'perf-budget.json'), JSON.stringify({ ok: true, budgets: [{ command: 'doctor', p95_ms: 100 }] }));
-  await fsp.writeFile(path.join(root, '.sneakoscope', 'reports', 'parallel-production-smoke.json'), JSON.stringify({ ok: true, changed_files: ['src/a.ts', 'src/b.ts'] }));
   await fsp.writeFile(path.join(root, '.sneakoscope', 'reports', 'super-search-local-http-smoke.json'), JSON.stringify({ ok: true, verified_content: true }));
   return root;
 }

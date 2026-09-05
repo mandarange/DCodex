@@ -1,3 +1,5 @@
+import { ASTRA_SUBAGENT_MODEL, SUBAGENT_EFFORT } from '../subagents/model-policy.js';
+
 export const RECALLPULSE_DECISION_ARTIFACT = 'recallpulse-decision.json';
 export const RECALLPULSE_HISTORY_ARTIFACT = 'recallpulse-history.jsonl';
 export const MISSION_STATUS_LEDGER_ARTIFACT = 'mission-status-ledger.json';
@@ -173,39 +175,36 @@ export const RECALLPULSE_POLICY = Object.freeze({
   rollback: 'set SKS_RECALLPULSE_MODE=off or leave report_only unpromoted'
 });
 
-export const RESEARCH_AGENT_PERSONA_CONTRACT = Object.freeze([
+export const RESEARCH_REVIEWER_CONTRACT = Object.freeze([
   {
-    id: 'einstein',
-    display_name: 'Einstein Agent',
-    historical_inspiration: 'Albert Einstein',
-    persona: 'first-principles reframer and explanation experimentalist',
-    role: 'first_principles_experimental_reframer',
-    mandate: 'Strip assumptions, identify invariants, explain the mechanism plainly, and build decisive thought experiments and cheap probes.',
-    required_outputs: ['eureka_moment', 'assumptions_removed', 'invariant_or_simplifying_frame', 'plain_language_mechanism', 'decisive_thought_experiment', 'cheap_empirical_probe']
+    id: 'evidence',
+    display_name: 'Evidence Reviewer',
+    persona: 'source integrity and claim linkage reviewer',
+    role: 'evidence_integrity_reviewer',
+    mandate: 'Check that material claims are supported by current eligible sources and that counterevidence is represented.',
+    required_outputs: ['strongest_challenge', 'evidence_source_ids', 'falsifiers', 'cheap_probes']
   },
   {
-    id: 'von_neumann',
-    display_name: 'von Neumann Agent',
-    historical_inspiration: 'John von Neumann',
-    persona: 'formal systems and strategy agent',
-    role: 'formal_systems_strategy_agent',
-    mandate: 'Formalize inputs, outputs, algorithms, limits, system dynamics, scaling behavior, incentives, and worst-case interactions.',
-    required_outputs: ['eureka_moment', 'formal_definition', 'algorithmic_shape', 'adversarial_case', 'system_model', 'scaling_risk', 'robustness_condition']
+    id: 'method',
+    display_name: 'Method Reviewer',
+    persona: 'method and validity reviewer',
+    role: 'method_validity_reviewer',
+    mandate: 'Check assumptions, method validity, limits, and whether the proposed tests can distinguish the claim from alternatives.',
+    required_outputs: ['strongest_challenge', 'method_limits', 'falsifiers', 'cheap_probes']
   },
   {
-    id: 'skeptic',
-    display_name: 'Skeptic Agent',
-    historical_inspiration: 'counterevidence discipline',
-    persona: 'counterevidence agent',
-    role: 'counterevidence_agent',
-    mandate: 'Attack the strongest surviving claim with counterevidence and base-rate failures.',
-    required_outputs: ['eureka_moment', 'counterevidence', 'base_rate_failure_mode', 'claim_to_downgrade']
+    id: 'falsification',
+    display_name: 'Falsification Reviewer',
+    persona: 'falsification and replication reviewer',
+    role: 'falsification_replication_reviewer',
+    mandate: 'Attack the strongest surviving claim with counterevidence, replication risks, and decisive failure conditions.',
+    required_outputs: ['strongest_challenge', 'counterevidence', 'falsifiers', 'cheap_probes']
   }
 ].map((agent: any) => Object.freeze({
   ...agent,
-  persona_boundary: 'persona-inspired cognitive lens only; do not impersonate the historical person',
+  persona_boundary: 'Apply only the assigned review dimension and report evidence-bound findings.',
   custom_agent: 'research_reviewer',
-  model: 'gpt-5.6-sol',
-  reasoning_effort: 'max',
+  model: ASTRA_SUBAGENT_MODEL,
+  reasoning_effort: SUBAGENT_EFFORT,
   service_tier: 'fast'
 })));

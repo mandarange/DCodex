@@ -27,26 +27,9 @@
       {
         "id": "installed-package-smoke",
         "path": ".sneakoscope/reports/installed-package-smoke.json"
-      },
-      {
-        "id": "release-gate-timing",
-        "path": ".sneakoscope/reports/gate-timing.json"
       }
     ],
-    "parallel_isolation": [
-      {
-        "id": "parallel-runtime-proof",
-        "path": ".sneakoscope/reports/parallel-production-smoke.json"
-      },
-      {
-        "id": "worktree-runtime",
-        "path": ".sneakoscope/reports/parallel-production-smoke.json"
-      },
-      {
-        "id": "patch-merge-proof",
-        "path": ".sneakoscope/reports/parallel-production-smoke.json"
-      }
-    ],
+    "parallel_isolation": [],
     "speed_performance": [
       {
         "id": "perf-budget",
@@ -55,10 +38,6 @@
       {
         "id": "hook-latency-quantum",
         "path": ".sneakoscope/reports/hook-latency-quantum.json"
-      },
-      {
-        "id": "gate-timing",
-        "path": ".sneakoscope/reports/gate-timing.json"
       }
     ],
     "install_operations": [

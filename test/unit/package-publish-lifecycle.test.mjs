@@ -153,7 +153,6 @@ test('npm pack excludes native checkout-only QA surfaces while retaining require
   );
   for (const excludedPath of [
     'scripts/build-clean-atomic.mjs',
-    'dist/core/agents/parallel-write-fixture.js',
     'dist/core/ops/upgrade-migration-fixtures.js',
     'dist/core/proof/route-finalizer-fixtures.js'
   ]) {

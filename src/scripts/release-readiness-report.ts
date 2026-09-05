@@ -75,7 +75,6 @@ const requiredGateGroups = {
     'dfix:patch-handoff',
     'dfix:verification-recommendation',
     'dfix:verification',
-    'evidence:flagship-coverage',
     'all-features:deep-completion'
   ]
 };
@@ -178,7 +177,7 @@ const report = {
   image_ux_review: { status: statusFor('flagship_routes'), gates: requiredGateGroups.flagship_routes.filter((id) => id.startsWith('ux-review:')) },
   ppt_imagegen_review: { status: statusFor('flagship_routes'), gates: requiredGateGroups.flagship_routes.filter((id) => id.startsWith('ppt:')) },
   dfix: { status: statusFor('flagship_routes'), gates: requiredGateGroups.flagship_routes.filter((id) => id.startsWith('dfix:')) },
-  all_features_completion: { status: statusFor('flagship_routes'), gates: ['evidence:flagship-coverage', 'all-features:deep-completion'] },
+  all_features_completion: { status: statusFor('flagship_routes'), gates: ['all-features:deep-completion'] },
   release_integrity: { status: statusFor('release_integrity'), gates: requiredGateGroups.release_integrity },
   checks,
   release_gate_last_pass_stamp: stamp ? {

@@ -18,9 +18,8 @@
  */
 
 import {
-  LUNA_SUBAGENT_MODEL,
-  SOL_SUBAGENT_MODEL,
-  TERRA_SUBAGENT_MODEL
+  ASTRA_SUBAGENT_MODEL,
+  LUNA_SUBAGENT_MODEL
 } from './model-policy.js';
 
 export const NARUTO_AUTH_MODES = ['managed', 'host'] as const;
@@ -229,11 +228,13 @@ function validateGpt56EffortPair(
   effort: string,
   blockers: string[]
 ): void {
-  const allowed = model === LUNA_SUBAGENT_MODEL || model === TERRA_SUBAGENT_MODEL
-    ? ['max']
-    : model === SOL_SUBAGENT_MODEL
-      ? scope === 'parent' ? ['max'] : ['high', 'max']
-      : null;
+  const allowed = model === ASTRA_SUBAGENT_MODEL
+    ? scope === 'parent' ? ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : ['medium', 'high', 'max']
+    : model === LUNA_SUBAGENT_MODEL || model === 'gpt-5.6-terra'
+      ? ['max']
+      : model === 'gpt-5.6-sol'
+        ? scope === 'parent' ? ['max'] : ['high', 'max']
+        : null;
   if (allowed && !allowed.includes(effort)) {
     blockers.push(`naruto_${scope}_gpt56_effort_policy_mismatch:${model}:${effort}:allowed_${allowed.join('_or_')}`);
   }

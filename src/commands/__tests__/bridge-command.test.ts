@@ -55,6 +55,9 @@ function fixture(
 test('bridge command maps the complete non-secret CLI surface to one controller facade', async () => {
   const cases: Array<[string[], BridgeCommandRequest]> = [
     [['status'], { operation: 'status' }],
+    [['auth-priority', 'status'], { operation: 'auth-priority.status' }],
+    [['auth-priority', 'on'], { operation: 'auth-priority.set', enabled: true }],
+    [['auth-priority', 'off'], { operation: 'auth-priority.set', enabled: false }],
     [['ensure'], { operation: 'ensure' }],
     [['repair'], { operation: 'repair' }],
     [['provider', 'list'], { operation: 'provider.list' }],

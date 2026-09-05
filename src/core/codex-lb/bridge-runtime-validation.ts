@@ -14,6 +14,7 @@ import {
 } from './bridge-runtime-validation/capability.js';
 import { validateCombinedCatalog } from './bridge-runtime-validation/catalog.js';
 import {
+  booleanValue,
   LEVELS,
   PROVIDERS,
   enumValue,
@@ -88,8 +89,18 @@ export function validateDesktopBridgeStatusV3(value: unknown): BridgeRuntimeVali
   exact(status, '$', [
     'schema', 'checked_at', 'correlation_id', 'management', 'service', 'http_probe',
     'websocket_probe', 'native_identity', 'providers', 'routing', 'catalog_sync',
-    'capabilities', 'readiness', 'recovery_actions'
+    'capabilities', 'readiness', 'recovery_actions',
+    ...(Object.hasOwn(status, 'auth_priority') ? ['auth_priority'] : [])
   ], issues);
+  if (status.auth_priority !== undefined) {
+    const priority = object(status.auth_priority, '$.auth_priority', issues);
+    if (priority) {
+      exact(priority, '$.auth_priority', ['enabled', 'state', 'error'], issues);
+      booleanValue(priority.enabled, '$.auth_priority.enabled', issues);
+      enumValue(priority.state, new Set(['off', 'active', 'unavailable']), '$.auth_priority.state', issues);
+      nullableString(priority.error, '$.auth_priority.error', issues);
+    }
+  }
   literal(status.schema, 'sks.desktop-bridge-status.v3', '$.schema', issues);
   iso(status.checked_at, '$.checked_at', issues);
   nonEmptyString(status.correlation_id, '$.correlation_id', issues);

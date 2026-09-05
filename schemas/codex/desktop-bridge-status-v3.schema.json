@@ -10,6 +10,15 @@
     "catalog_sync", "capabilities", "readiness", "recovery_actions"
   ],
   "properties": {
+    "auth_priority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "state", "error"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "state": { "enum": ["off", "active", "unavailable"] },
+        "error": { "type": ["string", "null"] }
+      }
+    },
     "schema": { "const": "sks.desktop-bridge-status.v3" },
     "checked_at": { "$ref": "#/$defs/dateTime" },
     "correlation_id": { "$ref": "#/$defs/nonEmptyString" },

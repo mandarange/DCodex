@@ -142,6 +142,7 @@ export function madSksSqlPlaneOperationClassesFromClassification(classification:
 
 export function activeMadSksSqlPlaneAllowsMutation(classification: any = {}): boolean {
   const toolName = classification.toolName || classification.tool_name || '';
+  if (classification.level === 'possible_db' && classification.toolReasons?.includes?.('database_tool')) return false;
   if (isMadSksSqlPlaneControlPlaneDeniedTool(toolName)) return false;
   if (classification.toolReasons?.includes?.('dangerous_supabase_management_tool')) return false;
   if (isMadSksSqlPlaneToolName(toolName)) return true;

@@ -21,10 +21,10 @@ const INTERNAL_SOURCE_CANDIDATES = [
   'CHANGELOG.md',
   'src/core/routes.ts',
   'src/core/routes/dollar-manifest-lite.ts',
+  'src/core/agents/agent-orchestrator.ts',
   'src/cli/command-manifest-lite.ts',
   'config/perf-budgets.v1.json',
   '.sneakoscope/reports/perf-budget.json',
-  '.sneakoscope/reports/parallel-production-smoke.json',
   '.sneakoscope/reports/super-search-local-http-smoke.json',
   '.sneakoscope/reports/installed-package-smoke.json',
 ];
@@ -167,7 +167,7 @@ function buildMarketingStrategy(missionId: string, inventory: SiteInventory, res
   const packageSource = sourceIds.find((id) => id.includes('package-json')) || sourceIds[0] || '';
   const readmeSource = sourceIds.find((id) => id.includes('readme')) || packageSource;
   const perfSource = sourceIds.find((id) => id.includes('perf-budget') || id.includes('perf'));
-  const parallelSource = sourceIds.find((id) => id.includes('parallel') || id.includes('naruto')) || sourceIds.find((id) => id.includes('routes'));
+  const parallelSource = sourceIds.find((id) => id.includes('agent-orchestrator') || id.includes('naruto'));
   const superSearchSource = sourceIds.find((id) => id.includes('super-search'));
   const oneLiner = `${inventory.package.name || 'Sneakoscope'} is a proof-first Codex trust layer for bounded agent workflows, search visibility, and evidence-backed release gates.`;
   const strategySources = unique([packageSource, readmeSource, superSearchSource, parallelSource, perfSource].filter(Boolean) as string[]);
@@ -190,7 +190,7 @@ function buildMarketingStrategy(missionId: string, inventory: SiteInventory, res
   const messagePillars = [
     { title: 'Proof-first route gates', claim: 'SKS records route artifacts, blockers, and release gates so Codex workflows can separate verified work from unverified claims.', source_ids: [readmeSource || packageSource].filter(Boolean) },
     ...(superSearchSource ? [{ title: 'Source-backed search visibility', claim: 'Super-Search and SEO/GEO artifacts keep source ledgers and claim ledgers attached to search visibility work.', source_ids: [superSearchSource] }] : []),
-    ...(parallelSource ? [{ title: 'Bounded parallel implementation', claim: 'Naruto and parallel worker reports track changed files, worker evidence, and patch-envelope style proof for multi-agent coding work.', source_ids: [parallelSource] }] : []),
+    ...(parallelSource ? [{ title: 'Bounded parallel implementation', claim: 'The Naruto agent orchestrator runs bounded multi-agent coding workflows.', source_ids: [parallelSource] }] : []),
     ...(perfSource ? [{ title: 'Measured fast paths', claim: 'Performance budget reports define p95 budgets for selected SKS fast-path commands.', source_ids: [perfSource] }] : []),
   ];
   const strategy: MarketingStrategy = {
@@ -415,14 +415,12 @@ function buildMarketingClaims(inventory: SiteInventory, internalSources: Marketi
   const packageSource = internalSources.find((source) => source.path === 'package.json');
   const readmeSource = internalSources.find((source) => source.path === 'README.md');
   const perfSource = internalSources.find((source) => source.path?.includes('perf-budget'));
-  const parallelSource = internalSources.find((source) => source.path?.includes('parallel-production-smoke'));
   const superSearchSource = internalSources.find((source) => source.path?.includes('super-search-local-http-smoke')) || externalSources.find((source) => source.verified);
   const claims: MarketingClaim[] = [];
   if (inventory.package.name) claims.push(publishableClaim('pkg-name', `${inventory.package.name} is the package name published in package metadata.`, 'identity', [packageSource?.id]));
   if (inventory.package.description) claims.push(publishableClaim('pkg-description', inventory.package.description, 'capability', [packageSource?.id]));
   if (readmeSource) claims.push(publishableClaim('readme-positioning', `README describes ${inventory.readme.h1 || inventory.package.name || 'the project'} and its SKS command surfaces.`, 'positioning', [readmeSource.id]));
   if (perfSource) claims.push(publishableClaim('perf-budget-source', 'Performance budget artifacts define command p95 budgets for release gates.', 'performance', [perfSource.id]));
-  if (parallelSource) claims.push(publishableClaim('parallel-proof-source', 'Parallel production smoke artifacts record changed-file evidence for worker execution.', 'parallel', [parallelSource.id]));
   if (superSearchSource) claims.push(publishableClaim('super-search-source-backed', 'Super-Search artifacts provide source ledgers for search visibility evidence.', 'super_search', [superSearchSource.id]));
   return claims;
 }

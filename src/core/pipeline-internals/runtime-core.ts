@@ -50,6 +50,7 @@ import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_EVIDENCE_SOURCE,
 import { coreEngineeringDirectiveReferenceText, engineeringSanityPolicyText } from '../lean-engineering-policy.js';
 import { classifyTaskProfile, gateProfileForTask, type GateProfile, type TaskProfile } from '../runtime/task-profile.js';
 import { chooseVerificationBudget, type VerificationBudget } from '../runtime/verification-budget.js';
+import { stopFinalizationRitualsEnforced } from '../verification-profile.js';
 import { NARUTO_PARENT_MODEL } from '../subagents/model-policy.js';
 import { HARD_NARUTO_MAX_THREADS } from '../subagents/thread-budget.js';
 import {
@@ -234,14 +235,20 @@ function taskProfileForRoute(route: any, task: string, classified: TaskProfile):
 }
 
 export async function writePipelinePlan(dir: any, input: any = {}) {
-  const route = input.route || routePrompt(input.task || '$SKS');
+  const root = input.root || rootFromMissionDir(dir);
+  const requestedRoute = input.route || routePrompt(input.task || '$SKS');
+  const route = requestedRoute.stopGate === 'honest_mode' && !stopFinalizationRitualsEnforced(root)
+    ? { ...requestedRoute, stopGate: 'none' }
+    : requestedRoute;
+  input = { ...input, route };
   const taskProfile: TaskProfile = input.taskProfile || taskProfileForRoute(route, String(input.task || ''), classifyTaskProfile(input.task || ''));
   if ((taskProfile === 'passthrough' || taskProfile === 'answer') && input.forceLightweightPlan !== true) {
-    return buildPipelinePlan({ ...input, taskProfile, requestIntake: input.requestIntake || null });
+    const plan = buildPipelinePlan({ ...input, taskProfile, requestIntake: input.requestIntake || null });
+    await writeJsonAtomic(path.join(dir, PIPELINE_PLAN_ARTIFACT), plan);
+    return plan;
   }
   const requestIntake = input.requestIntake || await writeRequestIntakeArtifact(dir, input);
   const plan = buildPipelinePlan({ ...input, taskProfile, requestIntake });
-  const root = input.root || rootFromMissionDir(dir);
   if (planStagesEngineeringSanityReview(plan)) {
     plan.engineering_sanity_review = {
       artifact: ENGINEERING_SANITY_REVIEW_ARTIFACT,
@@ -697,7 +704,7 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
   if (explicit || required) return finish(await prepareLightRoute(root, route, task, required, { sessionKey }));
   return finish({
     route,
-    additionalContext: `${promptPipelineContext(prompt, route)}\n\nReasoning: ${reasoning.effort} (${reasoning.reason}); temporary profile ${reasoning.profile}.\nRequired skills: ${route.requiredSkills.join(', ')}.\nOfficial subagents required: ${subagentsRequired ? 'yes' : 'no'}.`
+    additionalContext: `${promptPipelineContext(prompt, route)}\n\n${reasoningInstruction(reasoning)}\nRequired skills: ${route.requiredSkills.join(', ')}.\nOfficial subagents required: ${subagentsRequired ? 'yes' : 'no'}.`
   });
 }
 
@@ -847,7 +854,9 @@ async function prepareImageUxReview(root: any, route: any, task: any, required: 
 export async function activeRouteContext(root: any, state: any) {
   if (!state?.route && !state?.mode) return '';
   const id = state.route || state.mode;
-  const reasoningNote = state.reasoning_effort ? ` Temporary reasoning remains ${state.reasoning_effort} (${state.reasoning_profile}); return to the default profile after this route completes.` : '';
+  const reasoningNote = state.reasoning_effort
+    ? ` Reasoning hint: ${state.reasoning_effort} (${state.reasoning_profile}); preserve the user-selected model, effort, and service tier.`
+    : '';
   const planNote = await activePipelinePlanNote(root, state);
   if (state.honest_loop_required || /HONEST_LOOPBACK_AFTER_CLARIFICATION/.test(String(state.phase || ''))) {
     return `SKS Honest Mode found unresolved gaps for ${state.route_command || state.route || state.mode}. Do not ask ambiguity questions again. Continue from the sealed decision-contract.json, inspect .sneakoscope/missions/${state.mission_id}/honest-loopback.json, fix gaps, rerun verification, refresh/validate TriWiki, then retry final Honest Mode.${reasoningNote}${planNote}`;
@@ -1129,7 +1138,7 @@ async function prepareResearch(root: any, route: any, task: any, required: any, 
   const researchPlan = await writeResearchPlan(dir, task, {});
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'RESEARCH_PREPARED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, `Run sks research run latest as a real long-running source-gathering pass, never an automatic mock fallback; do not modify repository source code. Run layered Super Search first and allow only correlated verified-content rows to support real claims. Then run exactly three independent official research_reviewer threads on GPT-5.6 Sol Max. Any objection requires a mission-local research_synthesizer revision and a fresh three-thread review cycle; do not launch a custom scheduler or debate pool. Keep subagent-plan.json, subagent-events.jsonl, subagent-parent-summary.json, and subagent-evidence.json current, write research-report.md and ${researchPaperArtifactForPlan(researchPlan)}, and pass the adversarial convergence, Honest Mode, and research-gate.json checks.`);
+  return routeContext(route, id, task, required, `Run sks research run latest as a real long-running source-gathering pass, never an automatic mock fallback; do not modify repository source code. Run layered Super Search first and allow only correlated verified-content rows to support real claims. Then run exactly three independent official research_reviewer threads on GPT-6 Astra Max. Any objection requires a mission-local research_synthesizer revision and a fresh three-thread review cycle; do not launch a custom scheduler or debate pool. Keep subagent-plan.json, subagent-events.jsonl, subagent-parent-summary.json, and subagent-evidence.json current, write research-report.md and ${researchPaperArtifactForPlan(researchPlan)}, and pass the adversarial convergence, Honest Mode, and research-gate.json checks.`);
 }
 
 async function prepareAutoResearch(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1252,11 +1261,24 @@ async function prepareAlign(root: any, route: any, task: any, required: any, opt
 }
 
 async function prepareLightRoute(root: any, route: any, task: any, required: any, opts: any = {}) {
+  const strictFinalization = stopFinalizationRitualsEnforced(root);
+  const effectiveRoute = strictFinalization
+    ? route
+    : { ...route, stopGate: 'none' };
   const { id, dir } = await createMission(root, { mode: route.id.toLowerCase(), prompt: task, sessionKey: opts.sessionKey });
-  await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: route.id, command: route.command, task, required_skills: route.requiredSkills, context7_required: required, context_tracking: triwikiContextTracking(), stop_gate: 'honest_mode' });
-  const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'light_route' } });
-  await setCurrent(root, routeState(id, route, 'ROUTE_CONTEXT_READY', required, { prompt: task, stop_gate: 'none', ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, 'Load the route skill context, execute the smallest matching action, and finish with Honest Mode.');
+  await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: effectiveRoute.id, command: effectiveRoute.command, task, required_skills: effectiveRoute.requiredSkills, context7_required: required, context_tracking: triwikiContextTracking(), stop_gate: effectiveRoute.stopGate });
+  const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route: effectiveRoute, task, required, ambiguity: { required: false, status: 'light_route' } });
+  await setCurrent(root, routeState(id, effectiveRoute, 'ROUTE_CONTEXT_READY', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
+  return routeContext(
+    effectiveRoute,
+    id,
+    task,
+    required,
+    strictFinalization
+      ? 'Load the route skill context, execute the smallest matching action, and finish with Honest Mode.'
+      : 'Load the route skill context, execute the smallest matching action, verify it in proportion to risk, and finish directly.',
+    pipelinePlan
+  );
 }
 
 async function materializeOfficialSubagentOverlay(root: any, prepared: any, route: any, task: any, opts: any = {}) {
@@ -1507,11 +1529,14 @@ function routeState(id: any, route: any, phase: any, context7Required: any, extr
   const subagentsRequired = routeRequiresSubagents(route, extra.prompt || '');
   // Default off: only a caller that spread pipelinePlanState(plan) — i.e. a
   // plan that seeded engineering-sanity-review.json — may turn this gate on.
-  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: reflectionRequiredForRoute(route), engineering_sanity_required: false, engineering_sanity_scope_base: null, architecture_map_required: false, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: true, goal_continuation: ambientGoalContinuation(), ...extra };
+  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: route.stopGate !== 'none' && reflectionRequiredForRoute(route), engineering_sanity_required: false, engineering_sanity_scope_base: null, architecture_map_required: false, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: false, reasoning_advisory: true, goal_continuation: ambientGoalContinuation(), ...extra };
 }
 
-function routeContext(route: any, id: any, task: any, required: any, next: any) {
+function routeContext(route: any, id: any, task: any, required: any, next: any, pipelinePlan: any = null) {
   const visibleTask = stripVisibleDecisionAnswerBlocks(task);
+  const intakeLine = pipelinePlan?.request_intake?.status === 'not_attached'
+    ? 'Request intake: not materialized for this lightweight route; use the Task above directly.'
+    : `Request intake: .sneakoscope/missions/${id}/${REQUEST_INTAKE_ARTIFACT}\nExecution prompt: request-intake.transformed_prompt`;
   return {
     route,
     mission_id: id,
@@ -1520,16 +1545,15 @@ function routeContext(route: any, id: any, task: any, required: any, next: any) 
 ${route.command} route prepared.
 Mission: ${id}
 Task: ${visibleTask}
-Request intake: .sneakoscope/missions/${id}/${REQUEST_INTAKE_ARTIFACT}
-Execution prompt: request-intake.transformed_prompt
+${intakeLine}
 Pipeline plan: .sneakoscope/missions/${id}/${PIPELINE_PLAN_ARTIFACT}
 Required skills: ${route.requiredSkills.join(', ')}
 Stop gate: ${route.stopGate}
 Official subagents: ${routeRequiresSubagents(route, visibleTask) ? 'required for this explicit Naruto/parallel task; use independent disjoint slices, official agent threads, matched SubagentStart/SubagentStop events, and a parent integration summary.' : 'not required by this task profile; keep the work parent-owned unless a concrete independent decomposition emerges.'}
 TriWiki: use only a coordinate+voxel-overlay context pack before each route phase, hydrate low-trust claims during the phase, refresh after new findings or artifact changes, and validate before handoffs/final claims. Coordinate-only packs are invalid and must be refreshed before pipeline decisions.
 Final closeout: every pipeline final answer must summarize what was done, what changed for the user/repo, what was verified, and any remaining gaps.
-${reflectionRequiredForRoute(route) ? `Reflection: ${reflectionInstructionText()}` : 'Reflection: not required for this lightweight route.'}
-Reasoning: ${routeReasoning(route, visibleTask).effort} temporary; return to default after completion.
+${route.stopGate !== 'none' && reflectionRequiredForRoute(route) ? `Reflection: ${reflectionInstructionText()}` : 'Reflection: not required for this route.'}
+Reasoning hint: ${routeReasoning(route, visibleTask).effort}; preserve the user-selected model, effort, and service tier.
 Goal continuation: ambient /goal overlay may be used for persistence when it helps completion, but route gates remain authoritative.
 Next atomic action: ${next}`
   };

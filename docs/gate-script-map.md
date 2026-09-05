@@ -47,7 +47,6 @@ release is authorized. Current 8.1.3 classifications live in
 | `doctor:codex-app-harness` | `release` | `node ./dist/scripts/doctor-codex-app-harness-check.js` | direct |
 | `doctor:fix-proves-codex-read` | `release` | `node ./dist/scripts/doctor-fix-proves-codex-read-check.js` | direct |
 | `doctor:fixes-codex-app-fast-ui` | `release` | `node ./dist/scripts/doctor-fixes-codex-app-fast-ui-check.js` | direct |
-| `evidence:flagship-coverage` | `release` | `node ./dist/scripts/evidence-flagship-coverage-check.js` | direct |
 | `fast:codex-service-tier-proof` | `release` | `node ./dist/scripts/fast-codex-service-tier-proof-check.js` | direct |
 | `geo:comprehensive` | `release` | `node ./dist/scripts/geo-claim-evidence-check.js && node ./dist/scripts/geo-cli-blackbox-check.js && node ./dist/scripts/geo-crawler-policy-check.js` | direct |
 | `git-collaboration:e2e` | `release` | `node --test test/e2e/git-*.test.mjs test/e2e/shared-triwiki-merge.test.mjs test/e2e/wrongness-shared-sync.test.mjs` | direct |
@@ -92,7 +91,6 @@ release is authorized. Current 8.1.3 classifications live in
 | `release:batch-runner-comprehensive` | `release` | `node ./dist/scripts/release-gate-batch-runner-check.js && node ./dist/scripts/release-full-parallelism-blackbox.js` | direct |
 | `release:cache-key-comprehensive` | `release` | `node ./dist/scripts/release-cache-input-classifier-check.js && node ./dist/scripts/release-cache-glob-hashing-check.js && node ./dist/scripts/release-cache-version-neutral-fixture-check.js && node ./dist/scripts/release-cache-neutralization-report-check.js` | direct |
 | `release:dag-runner` | `release` | `node ./dist/scripts/release-gate-dag-runner-check.js` | direct |
-| `release:gate-budget` | `release` | `node ./dist/scripts/release-gate-budget-check.js` | direct |
 | `release:gate-selection-comprehensive` | `release` | `node ./dist/scripts/release-dynamic-presets-check.js && node ./dist/scripts/release-affected-selector-check.js` | direct |
 | `release:parallel-speed-budget` | `release` | `node ./dist/scripts/release-parallel-speed-budget-check.js` | direct |
 | `release:proof-truth` | `release` | `node ./dist/scripts/release-proof-truth-check.js` | direct |

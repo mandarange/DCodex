@@ -74,7 +74,11 @@ export function resolveBridgeRequestRoute(
   // The route a stale pin still owes this thread, or null when there is no pin
   // or the pin was replayed verbatim below.
   const pinClaim = pinAffinity && pinAffinity !== 'honored' ? pinAffinity : null;
-  if (pin && pinAffinity === 'honored') {
+  const qualifiedPinRoute = pin ? options.route_index.routes[`${pin.provider_id}:${model}`] : undefined;
+  const qualifiedPolicyRoute = pin ? policy.model_routes[`${pin.provider_id}:${model}`] : undefined;
+  const pinStillAvailable = pinClaim && qualifiedPinRoute && qualifiedPolicyRoute
+    && sameTarget(qualifiedPinRoute, pinClaim) && sameTarget(qualifiedPolicyRoute, pinClaim);
+  if (pin && (pinAffinity === 'honored' || pinStillAvailable)) {
     const route = { provider_id: pin.provider_id, upstream_model: pin.upstream_model } as const;
     const providerBlocker = validateProviderRoute(route, request.requested_endpoint_origin, options.registry, options.route_index);
     if (providerBlocker) return blocked(base, providerBlocker);
@@ -84,7 +88,7 @@ export function resolveBridgeRequestRoute(
       route,
       endpoint_url: options.registry.profiles[route.provider_id].endpoint.url,
       source: 'session_pin',
-      proposed_session_pin: pin,
+      proposed_session_pin: pinStillAvailable ? { ...pin, catalog_generation: policy.catalog_generation, route_policy_generation: policy.policy_generation } : pin,
       blockers: [],
       recovery_action: null
     };
@@ -96,6 +100,7 @@ export function resolveBridgeRequestRoute(
   const indexed = options.route_index.routes[model];
   const policyTarget = policy.model_routes[model];
   if (!indexed || !policyTarget) return blocked(base, 'catalog_model_route_missing');
+  if (pinClaim && !sameTarget(policyTarget, pinClaim)) return blocked(base, 'session_pin_route_unavailable');
   if (policyTarget.provider_id === 'openai') {
     // Official identity passthrough: the policy deliberately diverges from the
     // provider route index for this model. There is no provider endpoint, no

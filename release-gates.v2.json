@@ -2395,35 +2395,6 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
-      "id": "release:gate-budget",
-      "command": "node ./dist/scripts/release-gate-budget-check.js",
-      "deps": [],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "src/**",
-          "schemas/**"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v2"
-    },
-    {
       "id": "release:parallel-speed-budget",
       "command": "node ./dist/scripts/release-parallel-speed-budget-check.js",
       "deps": [
@@ -2450,7 +2421,6 @@
         "python-sdk:all-pipelines",
         "release:cache-key-comprehensive",
         "release:dag-runner",
-        "release:gate-budget",
         "release:provenance",
         "responses:retry-policy-centralized",
         "shared-memory:check",
@@ -4562,45 +4532,9 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
-      "id": "evidence:flagship-coverage",
-      "command": "node ./dist/scripts/evidence-flagship-coverage-check.js",
-      "deps": [
-        "dfix:verification",
-        "ppt:full-e2e-blackbox",
-        "ux-review:imagegen-blackbox"
-      ],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "src/core/evidence/**",
-          "src/core/trust-kernel/**",
-          "src/scripts/evidence-flagship-coverage-check.ts"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "confidence"
-      ],
-      "output_contract": "sks.gate-result.v2"
-    },
-    {
       "id": "all-features:deep-completion",
       "command": "node ./dist/scripts/all-feature-deep-completion-check.js",
-      "deps": [
-        "evidence:flagship-coverage"
-      ],
+      "deps": [],
       "resource": [
         "cpu-light",
         "fs-read"

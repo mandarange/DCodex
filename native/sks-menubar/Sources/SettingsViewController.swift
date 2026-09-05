@@ -35,12 +35,12 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         contextToggleButton.isEnabled = false
         let lifecycleCard = NativeView.card(
             title: "Codex lifecycle",
-            subtitle: "On keeps a lightweight observer running, hides the icon when Codex is closed, and shows it automatically when Codex opens.",
+            subtitle: "Automatically show or hide the menu icon with Codex.",
             views: [followCodexLifecycle]
         )
         let contextCard = NativeView.card(
             title: "Codex 1M Context",
-            subtitle: "Opt Codex into the documented 1,000,000-token context window for GPT-5.6 Sol (model_context_window = 1000000, model_auto_compact_token_limit = 900000 in ~/.codex/config.toml). Requests beyond 272K input tokens bill the entire request at the long-context rate, only new sessions pick up the change, and Codex restarts automatically when it is running. Off restores the previous value.",
+            subtitle: "Allow up to 1M tokens for GPT-5.6 Sol. New sessions use this setting; running Codex restarts. Requests over 272K input tokens use the long-context rate for the entire request.",
             views: [NativeView.row([contextToggleButton]), contextStatus]
         )
         let notificationsCard = NativeView.card(
@@ -49,8 +49,8 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
             views: [NativeView.row([notificationButton]), status]
         )
         view = NativeView.page([
-            ControlKit.header("Settings", "These options stay on this Mac. Notification permission and Codex lifecycle behavior never leave the machine."),
-            lifecycleCard, contextCard, notificationsCard
+            ControlKit.header("Settings", "Choose how SKS works on this Mac."),
+            lifecycleCard, notificationsCard, NativeDisclosure("Advanced", views: [contextCard])
         ])
     }
 

@@ -1,113 +1,217 @@
-import { findCodexBinary } from '../codex-adapter.js'
-import { runProcess } from '../fsx.js'
-
-const FALLBACK_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh']
+import {
+  normalizeCodexReasoningEffort,
+  readConfiguredCodexModelRoutingContext,
+  type CodexCatalogModel
+} from '../codex-app/codex-model-catalog.js'
+import type { CodexAppServerV2Client } from './codex-app-server-v2-client.js'
 
 export interface CodexModelMetadata {
   schema: 'sks.codex-model-metadata.v1'
   model: string
   advertised_efforts: string[]
   default_effort: string
-  source: 'app-server' | 'codex-cli' | 'env' | 'fallback'
+  source: 'app-server' | 'codex-catalog' | 'env' | 'unavailable'
   blockers: string[]
 }
 
-export async function collectCodexModelMetadata(input: { model?: string | null } = {}): Promise<CodexModelMetadata> {
-  if (process.env.SKS_CODEX_MODEL_METADATA_FAKE === '1') {
-    const advertised = normalizeAdvertisedEfforts(process.env.SKS_CODEX_MODEL_EFFORTS || 'low,medium,high,xhigh')
-    return metadata(String(input.model || process.env.SKS_CODEX_MODEL || process.env.CODEX_MODEL || ''), advertised, 'medium', 'app-server', [])
-  }
-  const model = String(input.model || process.env.SKS_CODEX_MODEL || process.env.CODEX_MODEL || '').trim()
-  const appServer = await readAppServerMetadata(model)
-  if (appServer) return appServer
-  const cli = await readCodexCliMetadata(model)
-  if (cli) return cli
-  const envEfforts = normalizeAdvertisedEfforts(process.env.SKS_CODEX_MODEL_EFFORTS || '')
-  if (envEfforts.length) return metadata(model, envEfforts, process.env.SKS_CODEX_MODEL_DEFAULT_EFFORT || 'medium', 'env', [])
-  return metadata(model, FALLBACK_EFFORT_ORDER, 'medium', 'fallback', ['codex_model_metadata_unavailable'])
+export interface CollectCodexModelMetadataInput {
+  model?: string | null
+  env?: NodeJS.ProcessEnv
+  home?: string
+  configPath?: string
+  codexBin?: string | null
 }
 
-async function readAppServerMetadata(model: string): Promise<CodexModelMetadata | null> {
-  const url = String(process.env.CODEX_APP_SERVER_METADATA_URL || process.env.SKS_CODEX_APP_SERVER_METADATA_URL || '').trim()
-  if (!url) return null
+export async function collectCodexModelMetadata(
+  input: CollectCodexModelMetadataInput = {}
+): Promise<CodexModelMetadata> {
+  const env = input.env || process.env
+  const routing = await readConfiguredCodexModelRoutingContext({
+    env,
+    ...(input.home ? { home: input.home } : {}),
+    ...(input.configPath ? { configPath: input.configPath } : {})
+  })
+  const model = String(
+    input.model
+      || env.SKS_CODEX_MODEL
+      || env.CODEX_MODEL
+      || routing.selected_model
+      || ''
+  ).trim()
+
+  const configured = routing.catalog.ok
+    ? metadataFromCatalog(routing.catalog.models, model)
+    : null
+  if (configured?.advertised_efforts.length) return configured
+
+  const appServer = await readAppServerMetadata({
+    model,
+    env,
+    ...(input.codexBin !== undefined ? { codexBin: input.codexBin } : {})
+  })
+  if (appServer.metadata?.advertised_efforts.length) return appServer.metadata
+
+  const envEfforts = normalizeAdvertisedEfforts(env.SKS_CODEX_MODEL_EFFORTS || '')
+  if (model && envEfforts.length) {
+    const envDefault = normalizeCodexReasoningEffort(env.SKS_CODEX_MODEL_DEFAULT_EFFORT)
+    return metadata(
+      model,
+      envEfforts,
+      envDefault || '',
+      'env',
+      envDefault && envEfforts.includes(envDefault)
+        ? []
+        : ['codex_model_metadata_default_effort_missing']
+    )
+  }
+
+  return metadata(model, [], '', 'unavailable', uniqueStrings([
+    'codex_model_metadata_unavailable',
+    ...(!model ? ['codex_model_selection_unknown'] : []),
+    ...(routing.catalog.configured ? routing.catalog.blockers : []),
+    ...(configured?.blockers || []),
+    appServer.blocker,
+    ...(appServer.metadata?.blockers || [])
+  ]))
+}
+
+async function readAppServerMetadata(input: {
+  model: string
+  env: NodeJS.ProcessEnv
+  codexBin?: string | null
+}): Promise<{ metadata: CodexModelMetadata | null; blocker: string | null }> {
+  let client: CodexAppServerV2Client | null = null
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(3000) })
-    if (!response.ok) return null
-    const payload: any = await response.json()
-    return normalizePayload(payload, model, 'app-server')
+    const { createCodexAppServerV2Client } = await import('./codex-app-server-v2-client.js')
+    const created = await createCodexAppServerV2Client({
+      env: input.env,
+      codexBin: input.codexBin || null,
+      requestedBy: 'codex-model-metadata',
+      timeoutMs: 5_000
+    })
+    client = created.client
+    await client.initialize()
+    const payload = await client.request('model/list', { includeHidden: true, limit: 512 })
+    return { metadata: metadataFromModelList(payload, input.model), blocker: null }
   } catch {
-    return null
+    return { metadata: null, blocker: 'codex_app_server_model_list_unavailable' }
+  } finally {
+    await client?.close()
   }
 }
 
-async function readCodexCliMetadata(model: string): Promise<CodexModelMetadata | null> {
-  const bin = await findCodexBinary()
-  if (!bin) return null
-  const commands = [
-    ['model', 'metadata', '--json'],
-    ['debug', 'model-metadata', '--json'],
-    ['capabilities', '--json']
-  ]
-  for (const args of commands) {
-    const result = await runProcess(bin, args, { timeoutMs: 3000, maxOutputBytes: 64 * 1024 }).catch(() => null)
-    if (!result || result.code !== 0) continue
-    try {
-      const payload = JSON.parse(`${result.stdout || ''}${result.stderr || ''}`.trim() || '{}')
-      const normalized = normalizePayload(payload, model, 'codex-cli')
-      if (normalized.advertised_efforts.length) return normalized
-    } catch {}
-  }
-  return null
-}
-
-function normalizePayload(payload: any, fallbackModel: string, source: 'app-server' | 'codex-cli'): CodexModelMetadata {
-  const catalog = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : null
-  const reportedSelection = String(payload?.selected_model || payload?.current_model || payload?.active_model || '').trim()
-  const requestedModel = String(fallbackModel || reportedSelection).trim()
-  const row = catalog
-    ? requestedModel
-      ? catalog.find((candidate: any) => String(candidate?.id || candidate?.model || candidate?.slug || candidate?.name || '') === requestedModel) || null
-      : null
-    : payload?.model_metadata || payload?.metadata || payload
+function metadataFromCatalog(
+  models: readonly CodexCatalogModel[],
+  requestedModel: string
+): CodexModelMetadata | null {
+  if (!requestedModel || models.length === 0) return null
+  const row = models.find((candidate) => candidate.model === requestedModel)
   if (!row) {
     return metadata(
       requestedModel,
       [],
-      'medium',
-      source,
-      [requestedModel ? 'codex_model_not_found_in_advertised_catalog' : 'codex_model_selection_unknown']
+      '',
+      'codex-catalog',
+      ['codex_model_not_found_in_advertised_catalog']
     )
   }
-  const effortRows = row?.supportedReasoningEfforts || row?.supported_reasoning_levels || row?.supported_reasoning_efforts || []
-  const structuredEfforts = Array.isArray(effortRows)
-    ? effortRows.map((entry: any) => entry?.reasoningEffort || entry?.effort || entry)
-    : []
-  const efforts = normalizeAdvertisedEfforts(structuredEfforts.length ? structuredEfforts : row?.advertised_efforts || row?.advertisedEfforts || row?.reasoning_efforts || row?.reasoningEfforts || payload?.advertised_efforts)
-  return metadata(String(row?.model || row?.id || row?.slug || row?.name || requestedModel), efforts, row?.default_reasoning_level || row?.defaultReasoningLevel || row?.default_effort || row?.defaultEffort || payload?.default_effort || 'medium', source, efforts.length ? [] : ['codex_model_metadata_efforts_missing'])
+  return metadata(
+    requestedModel,
+    [...row.reasoning_efforts],
+    row.default_reasoning_effort || '',
+    'codex-catalog',
+    row.default_reasoning_effort
+      ? []
+      : ['codex_model_metadata_default_effort_missing']
+  )
 }
 
-function metadata(model: string, efforts: string[], defaultEffort: string, source: CodexModelMetadata['source'], blockers: string[]): CodexModelMetadata {
+function metadataFromModelList(payload: unknown, requestedModel: string): CodexModelMetadata {
+  const root = asRecord(payload)
+  const rows = Array.isArray(root?.data) ? root.data.map(asRecord) : []
+  if (!requestedModel) {
+    return metadata('', [], '', 'app-server', ['codex_model_selection_unknown'])
+  }
+  const row = rows.find((candidate) => modelId(candidate) === requestedModel) || null
+  if (!row) {
+    return metadata(
+      requestedModel,
+      [],
+      '',
+      'app-server',
+      ['codex_model_not_found_in_advertised_catalog']
+    )
+  }
+  const efforts = normalizeAdvertisedEfforts(row.supportedReasoningEfforts)
+  const defaultEffort = String(row.defaultReasoningEffort || '')
+  return metadata(
+    requestedModel,
+    efforts,
+    defaultEffort,
+    'app-server',
+    efforts.length
+      ? defaultEffort
+        ? []
+        : ['codex_model_metadata_default_effort_missing']
+      : ['codex_model_metadata_efforts_missing']
+  )
+}
+
+function metadata(
+  model: string,
+  efforts: unknown,
+  defaultEffort: unknown,
+  source: CodexModelMetadata['source'],
+  blockers: string[]
+): CodexModelMetadata {
   const advertised = normalizeAdvertisedEfforts(efforts)
-  const defaultValue = advertised.includes(defaultEffort) ? defaultEffort : advertised.includes('medium') ? 'medium' : advertised[0] || 'medium'
+  const normalizedDefault = normalizeCodexReasoningEffort(defaultEffort)
+  const suppliedDefault = String(defaultEffort || '').trim()
   return {
     schema: 'sks.codex-model-metadata.v1',
     model,
     advertised_efforts: advertised,
-    default_effort: defaultValue,
+    default_effort: normalizedDefault && advertised.includes(normalizedDefault) ? normalizedDefault : '',
     source,
-    blockers
+    blockers: uniqueStrings([
+      ...blockers,
+      ...(advertised.length && suppliedDefault && !normalizedDefault
+        ? ['codex_model_metadata_default_effort_invalid']
+        : []),
+      ...(advertised.length && normalizedDefault && !advertised.includes(normalizedDefault)
+        ? ['codex_model_metadata_default_effort_not_advertised']
+        : [])
+    ])
   }
 }
 
-function normalizeAdvertisedEfforts(value: any): string[] {
+export function normalizeAdvertisedEfforts(value: unknown): string[] {
   const rows = Array.isArray(value) ? value : String(value || '').split(',')
   const seen = new Set<string>()
   const out: string[] = []
   for (const row of rows) {
-    const effort = String(row || '').trim().toLowerCase()
+    const record = asRecord(row)
+    const effort = normalizeCodexReasoningEffort(
+      record?.reasoningEffort
+        || row
+    )
     if (!effort || seen.has(effort)) continue
     seen.add(effort)
     out.push(effort)
   }
   return out
+}
+
+function modelId(value: Record<string, unknown> | null): string {
+  return String(value?.id || value?.model || value?.slug || value?.name || '').trim()
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))]
 }

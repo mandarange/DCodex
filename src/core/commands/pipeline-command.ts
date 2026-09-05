@@ -1,14 +1,16 @@
 import path from 'node:path';
 import { projectRoot, readJson } from '../fsx.js';
-import { listSessionStates, missionDir, setCurrent, stateFile } from '../mission.js';
+import { listSessionStates, loadOwnedRouteState, missionDir, setCurrent } from '../mission.js';
 import { PIPELINE_PLAN_ARTIFACT, pipelinePlanState, projectGateStatus, writePipelinePlan } from '../pipeline.js';
 import { routePrompt } from '../routes.js';
-import { flag, positionalArgs, readFlagValue, resolveMissionId } from './command-utils.js';
+import { positionalArgs } from '../../cli/args.js';
+import { flag, readFlagValue, resolveMissionId } from './command-utils.js';
 
 export async function pipelineCommand(args: any = []) {
   const root = await projectRoot();
   const action = args[0] || 'status';
-  const state = await readJson(stateFile(root), {});
+  const sessionKey = process.env.SKS_NARUTO_STANDALONE_CLI === '1' ? '' : process.env.CODEX_THREAD_ID;
+  const state = await loadOwnedRouteState(root, sessionKey);
   const sessions = await listSessionStates(root);
   if (action === 'status') {
     const result = { schema: 'sks.pipeline-status.v1', ok: true, state, sessions: sessions.map(sessionStatusRow) };

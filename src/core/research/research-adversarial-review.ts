@@ -31,7 +31,6 @@ import {
 import { THINKING_SUBAGENT_MODEL, SUBAGENT_EFFORT } from '../subagents/model-policy.js'
 import {
   RESEARCH_AGENT_COUNCIL,
-  RESEARCH_GENIUS_SUMMARY_ARTIFACT,
   RESEARCH_REVIEWER_CONFIG_ARTIFACT,
   RESEARCH_REVIEWER_CUSTOM_AGENT,
   researchAgentAgentName,
@@ -80,7 +79,6 @@ export interface ResearchReviewerOutcome {
   major_objections: ResearchReviewObjection[]
   minor_objections: ResearchReviewObjection[]
   required_revisions: string[]
-  eureka: { exclamation: 'Eureka!'; idea: string; source_ids: string[] }
   falsifiers: string[]
   cheap_probes: string[]
   confidence: 'low' | 'medium' | 'high'
@@ -171,10 +169,10 @@ export async function runResearchAdversarialReviewLoop(input: ResearchAdversaria
     const observationAt = Date.now()
     executionControl = recordExecutionObservation(executionControl, executionBudget, {
       fingerprint: {
-        open_objection_ids: [...convergence.open_objection_ids].sort(),
+        material_objection_ids: [...convergence.material_objection_ids].sort(),
         blockers: [...convergence.blockers].sort(),
         reviewers: convergence.reviewers,
-        all_approved: convergence.all_approved
+        material_objections: convergence.material_objections
       },
       elapsedMs: Math.max(0, observationAt - lastExecutionObservationAt),
       toolCalls: 1
@@ -203,10 +201,10 @@ export async function runResearchAdversarialReviewLoop(input: ResearchAdversaria
     }
     if (remainingTimeoutMs(deadlineMs) <= 0) break
     const revisionResult = await runResearchOperationBeforeDeadline(deadlineMs, () => input.revisionCycleImpl
-      ? input.revisionCycleImpl(input, cycle, maxThreads, convergence.open_objection_ids)
+      ? input.revisionCycleImpl(input, cycle, maxThreads, convergence.material_objection_ids)
       : input.mock
-        ? Promise.resolve(mockRevisionCycle(cycle, convergence.open_objection_ids))
-        : runOfficialRevisionCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, convergence.open_objection_ids))
+        ? Promise.resolve(mockRevisionCycle(cycle, convergence.material_objection_ids))
+        : runOfficialRevisionCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, convergence.material_objection_ids))
     if (revisionResult.timed_out) {
       executionControl = stopExecutionControl(executionControl, 'time_budget_exhausted', 'research revision cycle exceeded its absolute deadline')
       await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
@@ -291,8 +289,6 @@ export function evaluateReviewCycle(review: any, knownSourceIds: Set<string> = n
     if (!reviewer.thread_id) blockers.push(`reviewer_thread_id_missing:${reviewer.persona_id || 'unknown'}`)
     if (reviewer.thread_status !== 'completed') blockers.push(`reviewer_thread_not_completed:${reviewer.persona_id}`)
     if (!reviewer.strongest_challenge.trim()) blockers.push(`reviewer_challenge_missing:${reviewer.persona_id}`)
-    if (!reviewer.eureka.idea.trim() || reviewer.eureka.exclamation !== 'Eureka!') blockers.push(`reviewer_eureka_missing:${reviewer.persona_id}`)
-    if (!reviewer.eureka.source_ids.length) blockers.push(`reviewer_eureka_evidence_missing:${reviewer.persona_id}`)
     if (!reviewer.evidence_source_ids.length) blockers.push(`reviewer_evidence_missing:${reviewer.persona_id}`)
     if (!reviewer.falsifiers.length) blockers.push(`reviewer_falsifiers_missing:${reviewer.persona_id}`)
     if (!reviewer.cheap_probes.length) blockers.push(`reviewer_cheap_probes_missing:${reviewer.persona_id}`)
@@ -301,9 +297,6 @@ export function evaluateReviewCycle(review: any, knownSourceIds: Set<string> = n
     for (const sourceId of reviewer.evidence_source_ids) {
       if (!knownSourceIds.has(sourceId)) blockers.push(`reviewer_evidence_source_unknown:${reviewer.persona_id}:${sourceId}`)
     }
-    for (const sourceId of reviewer.eureka.source_ids) {
-      if (!knownSourceIds.has(sourceId)) blockers.push(`reviewer_eureka_source_unknown:${reviewer.persona_id}:${sourceId}`)
-    }
     const objections = [...reviewer.critical_objections, ...reviewer.major_objections, ...reviewer.minor_objections]
     for (const objection of objections) {
       if (!objection.id || !objection.reason || !objection.required_revision) blockers.push(`reviewer_objection_invalid:${reviewer.persona_id}`)
@@ -311,17 +304,17 @@ export function evaluateReviewCycle(review: any, knownSourceIds: Set<string> = n
         if (!knownSourceIds.has(sourceId)) blockers.push(`reviewer_objection_source_unknown:${reviewer.persona_id}:${sourceId}`)
       }
     }
-    if (reviewer.verdict === 'approve' && (objections.length || reviewer.required_revisions.length)) {
+    const materialObjections = [...reviewer.critical_objections, ...reviewer.major_objections]
+    if (reviewer.verdict === 'approve' && (materialObjections.length || reviewer.required_revisions.length)) {
       blockers.push(`reviewer_approve_with_unresolved_revision:${reviewer.persona_id}`)
     }
-    if (reviewer.verdict !== 'approve' && !objections.length && !reviewer.required_revisions.length) {
+    if (reviewer.verdict !== 'approve' && !materialObjections.length && !reviewer.required_revisions.length) {
       blockers.push(`reviewer_nonapproval_without_objection:${reviewer.persona_id}`)
     }
   }
-  const openObjections = reviewers.flatMap((reviewer) => [
+  const materialObjections = reviewers.flatMap((reviewer) => [
     ...reviewer.critical_objections,
     ...reviewer.major_objections,
-    ...reviewer.minor_objections,
     ...reviewer.required_revisions.map((revision, index) => ({
       id: `${reviewer.persona_id}-required-${index + 1}`,
       severity: 'major' as const,
@@ -331,18 +324,15 @@ export function evaluateReviewCycle(review: any, knownSourceIds: Set<string> = n
       required_revision: revision
     }))
   ])
+  const advisoryObjections = reviewers.flatMap((reviewer) => reviewer.minor_objections)
   const allApproved = reviewers.length === expectedIds.length && reviewers.every((reviewer) => reviewer.verdict === 'approve')
-  if (!allApproved) blockers.push('adversarial_review_not_unanimously_approved')
-  if (openObjections.some((objection) => objection.severity === 'critical')) blockers.push('critical_objections_unresolved')
-  if (openObjections.some((objection) => objection.severity === 'major')) blockers.push('major_objections_unresolved')
-  if (openObjections.some((objection) => objection.severity === 'minor')) blockers.push('minor_objections_unresolved')
-  if (openObjections.length) blockers.push('open_objections_unresolved')
+  if (materialObjections.some((objection) => objection.severity === 'critical')) blockers.push('critical_objections_unresolved')
+  if (materialObjections.some((objection) => objection.severity === 'major')) blockers.push('major_objections_unresolved')
+  if (materialObjections.length) blockers.push('material_objections_unresolved')
   const convergenceOnly = new Set([
-    'adversarial_review_not_unanimously_approved',
     'critical_objections_unresolved',
     'major_objections_unresolved',
-    'minor_objections_unresolved',
-    'open_objections_unresolved'
+    'material_objections_unresolved'
   ])
   const structuralBlockers = unique(blockers).filter((blocker) => !convergenceOnly.has(blocker) && !blocker.startsWith('reviewer_approve_with_unresolved_revision:'))
   return {
@@ -350,14 +340,16 @@ export function evaluateReviewCycle(review: any, knownSourceIds: Set<string> = n
     blockers: unique(blockers),
     reviewers: reviewers.length,
     all_approved: allApproved,
-    critical_objections: openObjections.filter((objection) => objection.severity === 'critical').length,
-    open_objections: openObjections.length,
-    open_objection_ids: unique(openObjections.map((objection) => objection.id)),
+    critical_objections: materialObjections.filter((objection) => objection.severity === 'critical').length,
+    major_objections: materialObjections.filter((objection) => objection.severity === 'major').length,
+    material_objections: materialObjections.length,
+    advisory_objections: advisoryObjections.length,
+    material_objection_ids: unique(materialObjections.map((objection) => objection.id)),
     revisable: structuralBlockers.length === 0
       && reviewers.length === expectedIds.length
       && new Set(threadIds).size === expectedIds.length
       && reviewers.every((reviewer) => reviewer.thread_status === 'completed')
-      && openObjections.length > 0
+      && materialObjections.length > 0
   }
 }
 
@@ -381,10 +373,9 @@ export function buildResearchAdversarialPlan(plan: any, maxCycles = 3, maxThread
       model_policy_source: modelPolicyEvidence?.source || RESEARCH_REVIEWER_CONFIG_ARTIFACT,
       model_policy_sha256: modelPolicyEvidence?.sha256 || null
     })),
-    convergence_policy: 'three distinct evidence-correlated official threads completed; every exact-schema verdict approve; zero critical, major, minor, or required revisions',
+    convergence_policy: 'three distinct evidence-correlated official threads completed; no critical, major, or required revision remains; minor concerns remain recorded as advisory findings',
     revision_policy: 'bounded mission-artifact-only revision followed by a fresh independent review cycle',
     guarantees: {
-      genius_level: false,
       novelty: false,
       publication_acceptance: false
     },
@@ -475,11 +466,6 @@ async function mockReviewCycle(input: ResearchAdversarialReviewLoopInput, cycle:
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: {
-      exclamation: 'Eureka!',
-      idea: `${researchAgentAgentName(agent)} fixture insight remains explicitly mock-only and source-bound.`,
-      source_ids: sourceIds.slice(index, index + 1).length ? sourceIds.slice(index, index + 1) : sourceIds.slice(0, 1)
-    },
     falsifiers: ['Remove cited source rows or leave a critical objection unresolved.'],
     cheap_probes: ['Run the adversarial convergence unit test.'],
     confidence: 'high',
@@ -515,7 +501,7 @@ async function runOfficialRevisionCycle(input: ResearchAdversarialReviewLoopInpu
       'Your thread outcome summary must itself be JSON: {"schema":"sks.research-revision-outcome.v1","status":"revised|blocked","addressed_objection_ids":[],"changed_artifacts":[],"remaining_blockers":[]}.'
     ].join(' ')
   }
-  const goal = `Revise the Research manuscript in .sneakoscope/missions/${input.plan?.mission_id || ''}/ using review cycle ${cycle}. Preserve source IDs and falsifiability; never claim guaranteed genius, novelty, breakthrough, or publication acceptance.`
+  const goal = `Revise the Research manuscript in .sneakoscope/missions/${input.plan?.mission_id || ''}/ using review cycle ${cycle}. Preserve source IDs and falsifiability; never overstate novelty, breakthrough, or publication acceptance.`
   const prompt = buildOfficialSubagentPrompt({
     goal,
     slices: [slice],
@@ -619,15 +605,15 @@ async function finalizeResearchAdversarialArtifacts(
     reviewer_count_observed: convergence.reviewers,
     review_cycles: reviewCycles.length,
     revision_cycles: revisions.length,
-    all_reviewers_approved: convergence.all_approved,
     review_artifacts: finalReview?.review_artifacts || null,
     review_artifact_bundle_sha256: finalReview?.review_artifacts?.bundle_sha256 || null,
     current_artifact_bundle_sha256: currentReviewArtifacts.bundle_sha256,
     review_artifact_hashes_ok: !convergence.blockers.some((blocker) => blocker.includes('artifact')),
     unresolved_critical_objections: convergence.critical_objections,
-    unresolved_objections: convergence.open_objections,
+    unresolved_major_objections: convergence.major_objections,
+    unresolved_material_objections: convergence.material_objections,
+    advisory_objections: convergence.advisory_objections,
     honest_mode_ok: honest.ok,
-    genius_level_guaranteed: false,
     novelty_guaranteed: false,
     publication_acceptance_guaranteed: false,
     reviewer_model_policy: {
@@ -674,7 +660,6 @@ async function writeCompatibilityCouncilArtifacts(dir: string, plan: any, finalR
       id: agent.id,
       agent_name: researchAgentAgentName(agent),
       display_name: agent.display_name,
-      historical_inspiration: agent.historical_inspiration,
       persona: agent.persona,
       persona_boundary: agent.persona_boundary,
       role: agent.role,
@@ -691,7 +676,6 @@ async function writeCompatibilityCouncilArtifacts(dir: string, plan: any, finalR
       model_observation_status: 'official_hook_schema_does_not_expose_model; enforced by verified research-reviewer.toml',
       official_subagent_thread_id: review.thread_id,
       review_verdict: review.verdict,
-      eureka: review.eureka,
       findings: [{
         id: `${agent.id}-adversarial-review`,
         claim: review.strongest_challenge,
@@ -721,14 +705,12 @@ async function writeCompatibilityCouncilArtifacts(dir: string, plan: any, finalR
     required_participants: RESEARCH_AGENT_COUNCIL.map((agent: any) => agent.id),
     participant_display_names: RESEARCH_AGENT_COUNCIL.map((agent: any) => researchAgentAgentName(agent)),
     consensus_iterations: Math.max(1, Number(finalReview?.cycle || 0)),
-    unanimous_consensus: gate.passed === true,
+    review_complete: gate.passed === true,
     agent_agreements: reviews.map((review) => ({
       agent_id: review.persona_id,
       agent_name: researchAgentAgentName(RESEARCH_AGENT_COUNCIL.find((agent: any) => agent.id === review.persona_id)),
-      agrees: review.verdict === 'approve'
-        && review.critical_objections.length === 0
+      material_objections_resolved: review.critical_objections.length === 0
         && review.major_objections.length === 0
-        && review.minor_objections.length === 0
         && review.required_revisions.length === 0,
       final_position: review.strongest_challenge,
       source_ids: review.evidence_source_ids
@@ -748,23 +730,6 @@ async function writeCompatibilityCouncilArtifacts(dir: string, plan: any, finalR
       unresolved_conflicts: reviews.flatMap((review) => [...review.critical_objections, ...review.major_objections, ...review.minor_objections].map((objection) => objection.id))
     }
   })
-  const summary = [
-    '# Genius Opinion Summary',
-    '',
-    'These are persona-inspired review lenses, not impersonations or evidence of genius-level performance.',
-    `Prompt: ${plan?.prompt || ''}`,
-    ''
-  ]
-  for (const agent of RESEARCH_AGENT_COUNCIL as readonly any[]) {
-    const review = byPersona.get(String(agent.id))
-    summary.push(`## ${researchAgentAgentName(agent)} (${agent.id})`)
-    summary.push(`Final opinion: ${review?.verdict || 'missing structured outcome'}.`)
-    summary.push(`Strongest evidence/challenge: ${review?.strongest_challenge || 'missing'}`)
-    summary.push(`Unresolved objections: ${(review?.critical_objections.length || 0) + (review?.major_objections.length || 0) + (review?.minor_objections.length || 0) + (review?.required_revisions.length || 0)}`)
-    summary.push(`Eureka: ${review?.eureka.idea || 'missing'}`)
-    summary.push('')
-  }
-  await writeTextAtomic(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT), `${summary.join('\n').trim()}\n`)
 }
 
 export async function buildResearchHonestMode(dir: string, plan: any, executionClass: 'real' | 'mock_fixture') {
@@ -777,7 +742,7 @@ export async function buildResearchHonestMode(dir: string, plan: any, executionC
   const overclaims = detectUnsupportedResearchOverclaims(text)
   const structuredAudit = auditStructuredResearchClaims(text, claimMatrix, noveltyLedger, sourceLedger)
   const blockers = unique([
-    ...overclaims.map((claim) => `unsupported_genius_or_novelty_claim:${claim}`),
+    ...overclaims.map((claim) => `unsupported_research_overclaim:${claim}`),
     ...structuredAudit.blockers
   ])
   return {
@@ -786,7 +751,6 @@ export async function buildResearchHonestMode(dir: string, plan: any, executionC
     execution_class: executionClass,
     ok: blockers.length === 0,
     guarantees: {
-      genius_level: false,
       novelty: false,
       breakthrough: false,
       publication_acceptance: false
@@ -794,7 +758,7 @@ export async function buildResearchHonestMode(dir: string, plan: any, executionC
     verified_claim: executionClass === 'mock_fixture'
       ? 'Only artifact shape and fail-closed gate behavior were exercised.'
       : 'Only source-linked claims that survived the recorded structured reviews may be presented as supported.',
-    unverified: ['live model intelligence level', 'scientific novelty absent an external prior-art study', 'peer-review or publication acceptance'],
+    unverified: ['scientific novelty absent an external prior-art study', 'peer-review or publication acceptance'],
     overclaims,
     claim_level_checks: structuredAudit.claim_level_checks,
     prior_art_proof: structuredAudit.prior_art_proof,
@@ -919,20 +883,20 @@ function reviewGoal(input: ResearchAdversarialReviewLoopInput, cycle: number, re
     `Topic: ${input.plan?.prompt || ''}`,
     'Read source-ledger.json, claim-evidence-matrix.json, falsification-ledger.json, research-report.md, and the dated research paper artifact.',
     `Review only the exact artifact bundle with SHA-256 ${reviewArtifacts.bundle_sha256}. The per-artifact hashes are ${JSON.stringify(reviewArtifacts.artifacts)}.`,
-    'Attempt to reject the manuscript. Approve only if the strongest challenge fails against cited evidence and no required revision remains.',
+    'Attempt to reject the manuscript. Approve only if the strongest challenge fails against cited evidence and no material revision remains. Record minor concerns as advisory findings.',
     'Each subagent thread outcome summary must itself be one compact JSON object matching sks.research-adversarial-reviewer-outcome.v1.',
-    'Do not claim to be a historical person. Do not guarantee genius, novelty, breakthrough status, peer review, or publication acceptance.'
+    'Do not overstate novelty, breakthrough status, peer review, or publication acceptance.'
   ].join(' ')
 }
 
 function reviewerTaskDescription(agent: any, cycle: number, artifactBundleSha256: string): string {
   return [
-    `Cycle ${cycle}. Apply the ${agent.display_name} persona-inspired lens: ${agent.mandate}`,
+    `Cycle ${cycle}. Apply the ${agent.display_name} review dimension: ${agent.mandate}`,
     agent.persona_boundary,
     `The exact review artifact bundle SHA-256 is ${artifactBundleSha256}. Copy it unchanged into review_artifact_bundle_sha256.`,
     'Return your thread outcome summary as JSON with fields:',
-    '{"schema":"sks.research-adversarial-reviewer-outcome.v1","persona_id":"' + agent.id + '","verdict":"approve|revise|reject","strongest_challenge":"...","evidence_source_ids":[],"critical_objections":[{"id":"...","severity":"critical","claim_ids":[],"source_ids":[],"reason":"...","required_revision":"..."}],"major_objections":[],"minor_objections":[],"required_revisions":[],"eureka":{"exclamation":"Eureka!","idea":"...","source_ids":[]},"falsifiers":[],"cheap_probes":[],"confidence":"low|medium|high","review_artifact_bundle_sha256":"' + artifactBundleSha256 + '"}.',
-    'Use only source IDs that exist in source-ledger.json. An approve verdict must have no critical, major, or minor objection and no required revision. Return nonempty falsifiers and cheap_probes.'
+    '{"schema":"sks.research-adversarial-reviewer-outcome.v1","persona_id":"' + agent.id + '","verdict":"approve|revise|reject","strongest_challenge":"...","evidence_source_ids":[],"critical_objections":[{"id":"...","severity":"critical","claim_ids":[],"source_ids":[],"reason":"...","required_revision":"..."}],"major_objections":[],"minor_objections":[],"required_revisions":[],"falsifiers":[],"cheap_probes":[],"confidence":"low|medium|high","review_artifact_bundle_sha256":"' + artifactBundleSha256 + '"}.',
+    'Use only source IDs that exist in source-ledger.json. An approve verdict must have no critical or major objection and no required revision. Minor objections are advisory. Return nonempty falsifiers and cheap_probes.'
   ].join(' ')
 }
 
@@ -980,11 +944,6 @@ function normalizeReviewerOutcome(value: any, threadRow: any): ResearchReviewerO
     major_objections: normalizeObjections(value?.major_objections, 'major'),
     minor_objections: normalizeObjections(value?.minor_objections, 'minor'),
     required_revisions: normalizeStrings(value?.required_revisions),
-    eureka: {
-      exclamation: value?.eureka?.exclamation === 'Eureka!' ? 'Eureka!' : 'Eureka!',
-      idea: value?.eureka?.exclamation === 'Eureka!' ? String(value?.eureka?.idea || '').trim() : '',
-      source_ids: normalizeStrings(value?.eureka?.source_ids)
-    },
     falsifiers: normalizeStrings(value?.falsifiers),
     cheap_probes: normalizeStrings(value?.cheap_probes),
     confidence: ['low', 'medium', 'high'].includes(value?.confidence) ? value.confidence : 'low',
@@ -1008,7 +967,6 @@ function validateReviewerOutcomeShape(value: any, threadRow: any): string[] {
     'major_objections',
     'minor_objections',
     'required_revisions',
-    'eureka',
     'falsifiers',
     'cheap_probes',
     'confidence',
@@ -1023,10 +981,6 @@ function validateReviewerOutcomeShape(value: any, threadRow: any): string[] {
   for (const key of ['evidence_source_ids', 'critical_objections', 'major_objections', 'minor_objections', 'required_revisions', 'falsifiers', 'cheap_probes']) {
     if (!Array.isArray(value?.[key])) blockers.push(`reviewer_field_not_array:${personaId || threadId || 'unknown'}:${key}`)
   }
-  if (!value?.eureka || typeof value.eureka !== 'object' || Array.isArray(value.eureka)) blockers.push(`reviewer_eureka_invalid:${personaId || threadId || 'unknown'}`)
-  if (value?.eureka?.exclamation !== 'Eureka!') blockers.push(`reviewer_eureka_exclamation_invalid:${personaId || threadId || 'unknown'}`)
-  if (!String(value?.eureka?.idea || '').trim()) blockers.push(`reviewer_eureka_missing:${personaId || threadId || 'unknown'}`)
-  if (!Array.isArray(value?.eureka?.source_ids)) blockers.push(`reviewer_eureka_sources_invalid:${personaId || threadId || 'unknown'}`)
   if (!['low', 'medium', 'high'].includes(value?.confidence)) blockers.push(`reviewer_confidence_invalid:${personaId || threadId || 'unknown'}`)
   if (!/^[a-f0-9]{64}$/i.test(String(value?.review_artifact_bundle_sha256 || ''))) blockers.push(`reviewer_artifact_bundle_sha256_invalid:${personaId || threadId || 'unknown'}`)
   for (const key of Object.keys(value || {})) {

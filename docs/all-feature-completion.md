@@ -6,6 +6,5 @@ Required release scripts:
 
 - `npm run all-features:completion`
 - `npm run all-features:deep-completion`
-- `npm run evidence:flagship-coverage`
 
 Features that only expose a static contract must either fail the release gate or carry an explicit `integration_optional`/`not_applicable` reason. Mock fixtures remain useful for hermetic checks, but they cannot be reported as real verified execution.

@@ -24,11 +24,10 @@ try {
       backend: 'codex-sdk',
       naruto_model_catalog: {
         ok: true,
-        models: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'],
+        models: ['gpt-5.6-luna', 'gpt-6-astra'],
         model_efforts: {
           'gpt-5.6-luna': ['low', 'medium', 'high', 'xhigh', 'max'],
-          'gpt-5.6-terra': ['low', 'medium', 'high', 'xhigh', 'max'],
-          'gpt-5.6-sol': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+          'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
         },
         blockers: []
       },

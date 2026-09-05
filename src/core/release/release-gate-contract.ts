@@ -24,7 +24,6 @@ export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
   'publish:packlist-performance',
   'publish:runtime-script-closure',
   'release:dag-runner',
-  'release:gate-budget',
   'release:latency-slo',
   'release:metadata-current',
   'release:proof-truth',

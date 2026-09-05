@@ -170,16 +170,6 @@
       "reason": "the built public Align route requires the packaged skill-surface audit as one of its exact verification receipts"
     },
     {
-      "source": "src/core/release/gate-timing.ts",
-      "classification": "installed_runtime",
-      "reason": "installed performance diagnostics execute the packaged release gate DAG"
-    },
-    {
-      "source": "dist/core/release/gate-timing.js",
-      "classification": "installed_runtime",
-      "reason": "built installed performance diagnostics execute the packaged release gate DAG"
-    },
-    {
       "source": "src/core/release/release-stamp-proof.ts",
       "classification": "installed_runtime",
       "reason": "installed release verification exposes the release check-stamp entrypoint"

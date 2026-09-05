@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { ASTRA_SUBAGENT_MODEL, SUBAGENT_EFFORT } from '../subagents/model-policy.js';
 import { nowIso, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
 import { CLAIM_EVIDENCE_MATRIX_ARTIFACT, buildClaimEvidenceMatrixFromLedgers, writeClaimEvidenceMatrix } from './claim-evidence-matrix.js';
 import { DEFAULT_RESEARCH_QUALITY_CONTRACT, writeResearchQualityContract } from './research-quality-contract.js';
@@ -12,7 +13,7 @@ import { writeResearchWorkGraph } from './research-work-graph.js';
 import { analyzeResearchReportQuality } from './research-report-quality.js';
 import { buildRealisticResearchPaper, buildRealisticResearchReport } from './research-realistic-report.js';
 import { buildResearchReviewArtifactDigest } from './research-review-artifact-digest.js';
-import { defaultAgentLedger, defaultResearchGate, defaultSourceLedger, evaluateResearchGate, researchAgentAgentName, RESEARCH_AGENT_COUNCIL, RESEARCH_GENIUS_SUMMARY_ARTIFACT, RESEARCH_PAPER_SECTION_GROUPS, researchPaperArtifactForPlan, RESEARCH_REVIEWER_CUSTOM_AGENT, RESEARCH_SOURCE_LAYER_IDS, RESEARCH_SOURCE_LAYERS, RESEARCH_SOURCE_SKILL_ARTIFACT, researchSourceSkillMarkdown } from '../research.js';
+import { defaultAgentLedger, defaultResearchGate, defaultSourceLedger, evaluateResearchGate, researchAgentAgentName, RESEARCH_AGENT_COUNCIL, RESEARCH_PAPER_SECTION_GROUPS, researchPaperArtifactForPlan, RESEARCH_REVIEWER_CUSTOM_AGENT, RESEARCH_SOURCE_LAYER_IDS, RESEARCH_SOURCE_LAYERS, RESEARCH_SOURCE_SKILL_ARTIFACT, researchSourceSkillMarkdown } from '../research.js';
 
 export async function writeMockResearchResult(dir: any, plan: any) {
   const paperArtifact = researchPaperArtifactForPlan(plan);
@@ -168,22 +169,15 @@ export async function writeMockResearchResult(dir: any, plan: any) {
       id: agent.id,
       agent_name: researchAgentAgentName(agent),
       display_name: agent.display_name || agent.label,
-      historical_inspiration: agent.historical_inspiration || null,
       persona: agent.persona || agent.role,
       persona_boundary: agent.persona_boundary,
       role: agent.role,
       mandate: agent.mandate,
       model_policy: {
         custom_agent: RESEARCH_REVIEWER_CUSTOM_AGENT,
-        model: 'gpt-5.6-sol',
-        reasoning_effort: 'max',
+        model: ASTRA_SUBAGENT_MODEL,
+        reasoning_effort: SUBAGENT_EFFORT,
         enforcement_source: 'mock_fixture'
-      },
-      eureka: {
-        exclamation: 'Eureka!',
-        idea: `${agent.display_name || agent.label} spots a non-obvious, testable angle for ${plan.prompt}.`,
-        why_it_matters: 'It forces the run to produce one falsifiable idea before synthesis.',
-        source_ids: ['mock-source-1']
       },
       query_set: sourceLedger.queries.filter((query: any) => query.agent_id === agent.id).map((query: any) => query.query),
       findings: [
@@ -207,23 +201,23 @@ export async function writeMockResearchResult(dir: any, plan: any) {
   const debateLedger = {
     schema_version: 1,
     created_at: nowIso(),
-    mode: 'vigorous_evidence_bound_debate_until_unanimous_consensus',
+    mode: 'independent_evidence_bound_reviews',
     required_participants: RESEARCH_AGENT_COUNCIL.map((agent: any) => agent.id),
     participant_display_names: RESEARCH_AGENT_COUNCIL.map((agent: any) => researchAgentAgentName(agent)),
     consensus_iterations: 2,
-    unanimous_consensus: true,
+    review_complete: true,
     agent_agreements: RESEARCH_AGENT_COUNCIL.map((agent: any) => ({
       agent_id: agent.id,
       agent_name: researchAgentAgentName(agent),
       display_name: agent.display_name || agent.label,
-      agrees: true,
+      material_objections_resolved: true,
       final_position: 'Agrees to keep the falsifiable, source-cited research mechanism as the surviving claim.',
       source_ids: ['mock-source-1', 'mock-counter-1']
     })),
     exchanges: [
-      { id: 'mock-debate-1', from: 'einstein', to: 'von_neumann', stance: 'challenge', claim: 'The plain-language toy probe must preserve the invariant and expose explicit inputs and outputs.', source_ids: ['mock-source-1'] },
-      { id: 'mock-debate-2', from: 'von_neumann', to: 'skeptic', stance: 'challenge', claim: 'The formal system model must survive scaling, adversarial cases, and base-rate comparison.', source_ids: ['mock-source-1', 'mock-counter-1'] },
-      { id: 'mock-debate-3', from: 'skeptic', to: 'einstein', stance: 'challenge', claim: 'The simplifying frame must be downgraded if counterevidence or replication checks fail.', source_ids: ['mock-counter-1'] }
+      { id: 'mock-review-1', from: 'evidence', to: 'research_synthesis', stance: 'challenge', claim: 'The source links must support the stated claim and include counterevidence.', source_ids: ['mock-source-1'] },
+      { id: 'mock-review-2', from: 'method', to: 'research_synthesis', stance: 'challenge', claim: 'The method must expose its assumptions, inputs, outputs, and limits.', source_ids: ['mock-source-1', 'mock-counter-1'] },
+      { id: 'mock-review-3', from: 'falsification', to: 'research_synthesis', stance: 'challenge', claim: 'The claim must be downgraded if counterevidence or replication checks fail.', source_ids: ['mock-counter-1'] }
     ],
     synthesis_pressure: {
       strongest_disagreement: 'Whether a falsifiable novelty gate should optimize for formal criteria or cheap experiments first.',
@@ -281,23 +275,6 @@ export async function writeMockResearchResult(dir: any, plan: any) {
       next_experiment: `Run the same topic through summary-only and discovery-loop prompts, then compare claim ${index + 1} support, falsification, and reproducibility.`
     }))
   };
-  const geniusSummary = [
-    '# Genius Opinion Summary',
-    '',
-    `Prompt: ${plan.prompt}`,
-    '',
-    '## Agent Opinions',
-    ...RESEARCH_AGENT_COUNCIL.flatMap((agent: any) => [
-      `### ${agent.display_name || agent.label} (${agent.id})`,
-      `Final opinion: ${agent.display_name || agent.label} wants the run to preserve ${agent.mandate.toLowerCase()} while producing a cited, falsifiable insight.`,
-      'Strongest evidence: mock-source-1 plus the layered source ledger.',
-      'Main disagreement: whether formal structure or cheap empirical probes should dominate the first pass.',
-      'Changed mind: accepted that citation coverage, counterevidence, and triangulation are gates before synthesis.',
-      ''
-    ]),
-    '## Council Consensus',
-    'The council keeps one modest, testable claim: Research Mode is useful when it writes a source-cited paper, records every agent opinion, triangulates across source layers, and exposes the next decisive test.'
-  ].join('\n');
   const claimMatrix = buildClaimEvidenceMatrixFromLedgers({
     missionId: plan?.mission_id || '',
     sourceLedger,
@@ -322,7 +299,6 @@ export async function writeMockResearchResult(dir: any, plan: any) {
   await writeJsonAtomic(path.join(dir, 'debate-ledger.json'), debateLedger);
   await writeJsonAtomic(path.join(dir, 'falsification-ledger.json'), falsificationLedger);
   await writeJsonAtomic(path.join(dir, 'novelty-ledger.json'), ledger);
-  await writeTextAtomic(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT), `${geniusSummary}\n`);
   const mockSourceIds = [...mockLayerSources.map((source: any) => source.id), 'mock-counter-1', 'mock-counter-2'];
   const mockCounterIds = ['mock-counter-1', 'mock-counter-2'];
   const researchReportText = buildRealisticResearchReport({
@@ -376,8 +352,6 @@ export async function writeMockResearchResult(dir: any, plan: any) {
     research_paper_artifact: paperArtifact,
     paper_present: true,
     paper_sections: RESEARCH_PAPER_SECTION_GROUPS.length,
-    genius_opinion_summary_present: true,
-    genius_opinion_summaries: RESEARCH_AGENT_COUNCIL.length,
     research_source_skill_present: true,
     source_ledger_present: true,
     agent_ledger_present: true,
@@ -389,22 +363,14 @@ export async function writeMockResearchResult(dir: any, plan: any) {
     source_layers_required: RESEARCH_SOURCE_LAYER_IDS.length,
     source_layers_covered: RESEARCH_SOURCE_LAYER_IDS.length,
     triangulation_checks: sourceLedger.triangulation.cross_layer_checks.length,
-    independent_agents: RESEARCH_AGENT_COUNCIL.length,
     xhigh_agents: 0,
-    sol_max_policy_agents: RESEARCH_AGENT_COUNCIL.length,
-    eureka_moments: RESEARCH_AGENT_COUNCIL.length,
-    agent_findings: RESEARCH_AGENT_COUNCIL.length,
-    debate_participants: RESEARCH_AGENT_COUNCIL.length,
-    debate_exchanges: debateLedger.exchanges.length,
-    consensus_iterations: debateLedger.consensus_iterations,
-    unanimous_consensus: true,
     counterevidence_sources: 2,
     candidate_insights: ledger.entries.length,
     falsification_passes: 1,
     falsification_cases: falsificationLedger.cases.length,
     testable_predictions: experimentPlan.steps.length,
     citation_coverage: true,
-    evidence: ['mock research report', `mock research paper: ${paperArtifact}`, 'mock genius opinion summary', 'mock research source skill', 'mock layered source ledger', 'mock agent ledger', 'mock debate ledger', 'mock novelty ledger', 'mock falsification ledger'],
+    evidence: ['mock research report', `mock research paper: ${paperArtifact}`, 'mock research source skill', 'mock layered source ledger', 'mock agent ledger', 'mock debate ledger', 'mock novelty ledger', 'mock falsification ledger'],
     notes: ['mock mode records the new contract but does not call a model or perform live web browsing']
   });
   await writeJsonAtomic(path.join(dir, 'research-final-review.codex.json'), {
@@ -435,11 +401,6 @@ export async function writeMockResearchResult(dir: any, plan: any) {
     major_objections: [],
     minor_objections: [],
     required_revisions: [],
-    eureka: {
-      exclamation: 'Eureka!',
-      idea: `${researchAgentAgentName(agent)} records a bounded mock-only source-linked insight.`,
-      source_ids: [`mock-source-${(index % mockLayerSources.length) + 1}`]
-    },
     falsifiers: ['Remove the cited mock source or leave a required revision unresolved.'],
     cheap_probes: ['Run the canonical adversarial validation fixture.'],
     confidence: 'high',
@@ -484,15 +445,15 @@ export async function writeMockResearchResult(dir: any, plan: any) {
     reviewer_count_observed: RESEARCH_AGENT_COUNCIL.length,
     review_cycles: 1,
     revision_cycles: 0,
-    all_reviewers_approved: true,
     review_artifacts: reviewArtifacts,
     review_artifact_bundle_sha256: reviewArtifacts.bundle_sha256,
     current_artifact_bundle_sha256: reviewArtifacts.bundle_sha256,
     review_artifact_hashes_ok: reviewArtifacts.blockers.length === 0,
     unresolved_critical_objections: 0,
-    unresolved_objections: 0,
+    unresolved_major_objections: 0,
+    unresolved_material_objections: 0,
+    advisory_objections: 0,
     honest_mode_ok: true,
-    genius_level_guaranteed: false,
     novelty_guaranteed: false,
     publication_acceptance_guaranteed: false,
     blockers: []
@@ -503,13 +464,12 @@ export async function writeMockResearchResult(dir: any, plan: any) {
     execution_class: 'mock_fixture',
     ok: true,
     guarantees: {
-      genius_level: false,
       novelty: false,
       breakthrough: false,
       publication_acceptance: false
     },
     verified_claim: 'Only artifact shape and fail-closed gate behavior were exercised.',
-    unverified: ['live model intelligence level', 'scientific novelty', 'publication acceptance'],
+    unverified: ['scientific novelty', 'publication acceptance'],
     overclaims: [],
     blockers: []
   });

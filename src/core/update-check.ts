@@ -11,7 +11,6 @@ import {
   runPackageLocalDoctor,
   type PackageLocalDoctorRun,
   type UpdateMigrationReceipt,
-  writeProjectUpdateMigrationReceipt
 } from './update/update-migration-state.js';
 import {
   inspectSksMenuBarStatus,
@@ -511,6 +510,9 @@ export const UPDATE_STAGE_ORDER = [
 export function updateNestedProcessEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...env,
+    // The updater owns convergence after verifying the installed package.
+    // Suppress lifecycle bootstrap even if the caller opted into it globally.
+    SKS_POSTINSTALL_NO_BOOTSTRAP: '1',
     SKS_UPDATE_DEFER_MENUBAR_RESTART: '1',
     SKS_SKIP_SKS_MENUBAR_LAUNCH: '1'
   };
@@ -1014,132 +1016,16 @@ async function runSksUpdateNowInternal(
       }));
     }
   }
-  if (!requestedVersion && check.latest && !check.update_available) {
-    stage('preflight', true, 'already_current', { current: check.current });
-    recordRegistryStage();
-    stage('temporary_install_smoke', true, 'skipped_current', { current: check.current });
-    stage('global_install', true, 'skipped_current', { current: check.current });
-    // Record the install-only stages as explicit skips so the receipt covers the
-    // full UPDATE_STAGE_ORDER checklist even when no new package is installed.
-    stage('resolve_new_binary', true, 'skipped_current', { current: check.current });
-    stage('version_probe', true, 'skipped_current', { current: check.current });
-    stage('new_version_doctor', true, 'skipped_current', { current: check.current });
-    let receipt = await writeProjectUpdateMigrationReceipt({
-      root: projectReceiptRoot,
-      source: 'update-now-current',
-      fromVersion: check.current,
-      blockers: [],
-      warnings: ['package_already_current']
-    }).catch(() => null);
-    let migrationCurrent = isUpdateMigrationReceiptCurrent(receipt);
-    recordMigrationReceiptStage(stage, 'hook_trust_repair', receipt, 'hook-trust-refresh');
-    stage('project_receipt', migrationCurrent, migrationCurrent ? 'current' : 'failed', {
-      root: projectReceiptRoot,
-      receipt_status: receipt?.status || null,
-      receipt_version: receipt?.sks_version || null,
-      required_blockers: receipt?.required_blockers || [],
-      optional_warnings: receipt?.optional_warnings || [],
-      installation_epoch_sha256: receipt?.installation_epoch_sha256 || null
-    });
-    recordMigrationReceiptStage(stage, 'global_skills_reconcile', receipt, 'skills-reconcile');
-    stage('native_capability_setup', true, 'skipped_current', { reason: 'package_already_current' });
-    const sksMenuBar = migrationCurrent
-      ? await installUpdateSksMenuBar({ root: projectReceiptRoot, env, stage, quiet: machineOutput })
-      : null;
-    const menuVerification = await verifyUpdateMenuBar({
-      install: sksMenuBar,
-      expectedVersion: check.current,
-      ...(env.HOME ? { home: env.HOME } : {}),
-      root: projectReceiptRoot,
-      env
-    });
-    stage('menubar_signature_verify', menuVerification.ok, menuVerification.status, menuVerification.detail);
-    stage('menubar_version_probe', menuVerification.versionProbe.ok, menuVerification.versionProbe.status, menuVerification.versionProbe.detail);
-    // The migration receipt above is the only mutator. Close with a read-only
-    // Doctor so verification cannot silently repair its own evidence.
-    const currentFinalizeDoctor = await runUpdateFinalizeDoctor({
-      root: projectReceiptRoot,
-      env: nestedProcessEnv,
-      machineOutput
-    });
-    stage('update_finalize_doctor', currentFinalizeDoctor.ok, currentFinalizeDoctor.status, {
-      entrypoint: currentFinalizeDoctor.entrypoint,
-      args: currentFinalizeDoctor.args,
-      exit_code: currentFinalizeDoctor.exit_code,
-      timed_out: currentFinalizeDoctor.timed_out,
-      required_blockers: currentFinalizeDoctor.required_blockers,
-      optional_warnings: currentFinalizeDoctor.optional_warnings
-    });
-    const finalCurrentReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
-    if (finalCurrentReceipt) receipt = finalCurrentReceipt;
-    migrationCurrent = isUpdateMigrationReceiptCurrent(receipt);
-    stage('final_self_verification', migrationCurrent && menuVerification.ok && currentFinalizeDoctor.ok, migrationCurrent && menuVerification.ok && currentFinalizeDoctor.ok ? 'verified_current' : 'issues', {});
-    const currentSnapshot = await runSksUpdateStatus(updateStatusOptionsFromNow(
-      options,
-      check.current,
-      { ...env, [versionOverrideEnvName(packageName)]: check.latest || check.current }
-    )).catch(() => null);
-    const snapshotOk = currentSnapshot?.schema === 'sks.update-status.v3' && currentSnapshot.source !== 'error';
-    stage('snapshot_refresh', snapshotOk, snapshotOk ? currentSnapshot!.source : 'failed', {
-      update_count: currentSnapshot?.update_count ?? null
-    });
-    const currentMenuBarTerminalUncertain = menuBarInstallIsTerminalUncertain(sksMenuBar);
-    const currentStageFailures = requiredUpdateStageFailures(stages, UPDATE_STAGE_ORDER);
-    const currentOk = migrationCurrent
-      && menuVerification.ok
-      && currentFinalizeDoctor.ok
-      && snapshotOk
-      && currentStageFailures.length === 0
-      && !currentMenuBarTerminalUncertain;
-    const currentError = currentOk ? null : currentMenuBarTerminalUncertain
-      ? 'Menu Bar launch or rollback completion could not be confirmed'
-      : currentFinalizeDoctor.ok
-        ? currentStageFailures.length
-          ? `current-version repair verification failed: ${currentStageFailures.join(',')}`
-          : 'current-version repair verification failed'
-        : 'current-version repair verification failed: update_finalize_doctor';
-    const currentOperationError = currentError && currentStageFailures.length
-      ? requiredUpdateStageFailureError(
-          currentError,
-          stages,
-          currentStageFailures,
-          projectReceiptRoot
-        )
-      : currentError;
-    return finalize(buildUpdateNowResult({
-      packageName,
-      from: check.current,
-      latest: check.latest,
-      requestedVersion,
-      installVersion,
-      npmBin,
-      npmArgs,
-      command,
-      cwd,
-      projectRoot: projectReceiptRoot,
-      registry,
-      globalRoot,
-      status: currentMenuBarTerminalUncertain ? 'terminal_uncertain' : 'current',
-      ok: currentOk,
-      installCode: null,
-      oldVersionDoctor: null,
-      newBinary: null,
-      newVersion: check.current,
-      newVersionDoctor: null,
-      projectReceipt: receipt,
-      migrationCurrent,
-      sksMenuBar,
-      stages,
-      error: currentError
-    }), currentOperationError);
-  }
+  const alreadyCurrent = compareSemVer(installVersion, check.current) === 0;
 
   const oldDoctorTimeoutOverride = Number.parseInt(env.SKS_UPDATE_OLD_DOCTOR_TIMEOUT_MS || '', 10);
   const oldDoctorTimeoutMs = Number.isFinite(oldDoctorTimeoutOverride) && oldDoctorTimeoutOverride > 0
     ? oldDoctorTimeoutOverride
     : 60_000;
   let oldVersionDoctor: PackageLocalDoctorRun | null = null;
-  if (env.SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT === '1') {
+  if (alreadyCurrent) {
+    stage('preflight', true, 'already_current', { current: check.current });
+  } else if (env.SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT === '1') {
     stage('preflight', true, 'skipped', { reason: 'SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT=1' });
   } else {
     stageStart('preflight', 'running read-only migration preflight on current install');
@@ -1163,48 +1049,52 @@ async function runSksUpdateNowInternal(
     });
   }
   recordRegistryStage();
-  temporaryInstallSmoke = await runTemporaryInstallSmoke({
-    npmBin,
-    packageName,
-    version: installVersion,
-    registry,
-    env: nestedProcessEnv,
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes })
-  });
-  stage('temporary_install_smoke', temporaryInstallSmoke.ok, temporaryInstallSmoke.status, {
-    install_code: temporaryInstallSmoke.install_code,
-    manifest_version: temporaryInstallSmoke.manifest_version,
-    probed_version: temporaryInstallSmoke.probed_version,
-    doctor_status: temporaryInstallSmoke.doctor?.status || null,
-    error: temporaryInstallSmoke.error
-  });
-  if (!temporaryInstallSmoke.ok) {
-    return finalize(buildUpdateNowResult({
-      packageName,
-      from: check.current,
-      latest: check.latest,
-      requestedVersion,
-      installVersion,
+  if (alreadyCurrent) {
+    stage('temporary_install_smoke', true, 'skipped_current', { current: check.current });
+  } else {
+    temporaryInstallSmoke = await runTemporaryInstallSmoke({
       npmBin,
-      npmArgs,
-      command,
-      cwd,
-      projectRoot: projectReceiptRoot,
+      packageName,
+      version: installVersion,
       registry,
-      globalRoot,
-      status: 'failed',
-      ok: false,
-      installCode: null,
-      oldVersionDoctor,
-      newBinary: null,
-      newVersion: null,
-      newVersionDoctor: null,
-      projectReceipt: null,
-      migrationCurrent: false,
-      stages,
-      error: temporaryInstallSmoke.error || 'temporary install smoke failed'
-    }));
+      env: nestedProcessEnv,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes })
+    });
+    stage('temporary_install_smoke', temporaryInstallSmoke.ok, temporaryInstallSmoke.status, {
+      install_code: temporaryInstallSmoke.install_code,
+      manifest_version: temporaryInstallSmoke.manifest_version,
+      probed_version: temporaryInstallSmoke.probed_version,
+      doctor_status: temporaryInstallSmoke.doctor?.status || null,
+      error: temporaryInstallSmoke.error
+    });
+    if (!temporaryInstallSmoke.ok) {
+      return finalize(buildUpdateNowResult({
+        packageName,
+        from: check.current,
+        latest: check.latest,
+        requestedVersion,
+        installVersion,
+        npmBin,
+        npmArgs,
+        command,
+        cwd,
+        projectRoot: projectReceiptRoot,
+        registry,
+        globalRoot,
+        status: 'failed',
+        ok: false,
+        installCode: null,
+        oldVersionDoctor,
+        newBinary: null,
+        newVersion: null,
+        newVersionDoctor: null,
+        projectReceipt: null,
+        migrationCurrent: false,
+        stages,
+        error: temporaryInstallSmoke.error || 'temporary install smoke failed'
+      }));
+    }
   }
   const mutationLedgerRoot = env.SKS_MUTATION_LEDGER_ROOT || packageRoot();
   const installContract = createRequestedScopeContract({
@@ -1215,7 +1105,7 @@ async function runSksUpdateNowInternal(
   });
   const npmStdout = machineOutput ? undefined : throttleLines((line) => process.stderr.write(`  npm | ${line}\n`), 500);
   const npmStderr = machineOutput ? undefined : throttleLines((line) => process.stderr.write(`  npm ! ${line}\n`), 500);
-  stageStart('global_install', command || `npm global install ${packageName}`);
+  if (!alreadyCurrent) stageStart('global_install', command || `npm global install ${packageName}`);
   const installOptions: Parameters<typeof guardedPackageInstall>[2] = {
     confirmed: true,
     command: npmBin,
@@ -1227,11 +1117,13 @@ async function runSksUpdateNowInternal(
   };
   if (npmStdout) installOptions.onStdout = npmStdout;
   if (npmStderr) installOptions.onStderr = npmStderr;
-  await durableStageIntent('global_install', 'started', {
+  if (!alreadyCurrent) await durableStageIntent('global_install', 'started', {
     command,
     target_version: installVersion
   });
-  const install = env.SKS_UPDATE_FAKE_INSTALL === '1'
+  const install = alreadyCurrent
+    ? { code: 0, stdout: '', stderr: '', timedOut: false }
+    : env.SKS_UPDATE_FAKE_INSTALL === '1'
     ? { code: 0, stdout: 'fake install ok', stderr: '', timedOut: false }
     : await updateHeartbeat(machineOutput, `npm install -g ${packageName}`, guardedPackageInstall(
       guardContextForRoute(mutationLedgerRoot, installContract, command || `npm global install ${packageName}`),
@@ -1244,7 +1136,7 @@ async function runSksUpdateNowInternal(
       timedOut: false
     }));
   const installOk = install.code === 0;
-  stage('global_install', installOk, installOk ? env.SKS_UPDATE_FAKE_INSTALL === '1' ? 'fake_installed' : 'installed' : 'failed', { command, code: install.code, timed_out: install.timedOut === true });
+  stage('global_install', installOk, alreadyCurrent ? 'skipped_current' : installOk ? env.SKS_UPDATE_FAKE_INSTALL === '1' ? 'fake_installed' : 'installed' : 'failed', { command, code: install.code, timed_out: install.timedOut === true });
   let newBinary: string | null = null;
   let newVersion: string | null = null;
   let installedCliResolution: InstalledCliResolution | null = null;
@@ -1308,7 +1200,8 @@ async function runSksUpdateNowInternal(
       });
       if (installedPackageIdentityOk && exactVersion) {
         preDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
-        stageStart('new_version_doctor', 'running migration doctor on updated install');
+        stageStart('new_version_doctor', 'converging installed package setup and managed surfaces');
+        await durableStageIntent('new_version_doctor', 'started', { entrypoint: newBinary });
         newVersionDoctor = await updateHeartbeat(machineOutput, 'new-version doctor', runPackageLocalDoctor({
           root: projectReceiptRoot,
           entrypoint: newBinary,
@@ -1351,7 +1244,7 @@ async function runSksUpdateNowInternal(
             via: 'new_version_doctor_receipt_required'
           };
       projectReceipt = receiptResult.receipt;
-      migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
+      migrationCurrent = doctorReceiptCurrent;
       recordMigrationReceiptStage(stage, 'hook_trust_repair', projectReceipt, 'hook-trust-refresh');
       stage('project_receipt', migrationCurrent, migrationCurrent ? 'current' : 'failed', {
         root: projectReceiptRoot,
@@ -1364,9 +1257,11 @@ async function runSksUpdateNowInternal(
       });
       recordMigrationReceiptStage(stage, 'global_skills_reconcile', projectReceipt, 'skills-reconcile');
       stage('native_capability_setup', migrationCurrent, migrationCurrent
-        ? 'owned_by_new_version_doctor'
+        ? 'managed_setup_converged'
         : 'doctor_migration_not_current', {
         owner: 'new_version_doctor',
+        scope: 'managed_setup_and_migration',
+        optional_native_capabilities_verified: false,
         doctor_status: newVersionDoctor.status,
         receipt_source: projectReceipt?.source || null,
         receipt_version: projectReceipt?.sks_version || null
@@ -1410,7 +1305,7 @@ async function runSksUpdateNowInternal(
   if (finalizeDoctor) {
     const finalDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
     if (finalDoctorReceipt) projectReceipt = finalDoctorReceipt;
-    migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
+    migrationCurrent = migrationCurrent && isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
   }
   if (installOk && installVersion && env.SKS_UPDATE_FAKE_INSTALL !== '1') {
     installedCliResolution = await inspectInstalledCliResolution({
@@ -1476,7 +1371,7 @@ async function runSksUpdateNowInternal(
   const terminalUncertain = install.timedOut === true || menuBarTerminalUncertain;
   const status: SksUpdateNowResult['status'] = terminalUncertain
     ? 'terminal_uncertain'
-    : ok ? 'updated' : baseOk ? 'updated_with_issues' : 'failed';
+    : ok ? alreadyCurrent ? 'current' : 'updated' : baseOk && !alreadyCurrent ? 'updated_with_issues' : 'failed';
   const stageFailureError = executionStageFailures.length
     ? requiredUpdateStageFailureError(
         `required update stages failed: ${executionStageFailures.join(',')}`,
@@ -1492,7 +1387,7 @@ async function runSksUpdateNowInternal(
     : ok ? null
       : stageFailureError
         ? stageFailureError.message
-        : status === 'updated_with_issues'
+        : baseOk
           ? !snapshotOk
             ? `update status still resolves SKS ${snapshot?.sks.current || 'unknown'} instead of ${installVersion}`
             : verificationError(verification, finalizeDoctor)
@@ -1521,7 +1416,7 @@ async function runSksUpdateNowInternal(
     globalRoot,
     status,
     ok,
-    installCode: install.code,
+    installCode: alreadyCurrent ? null : install.code,
     oldVersionDoctor,
     newBinary,
     newVersion,
@@ -1638,7 +1533,7 @@ function isFreshDoctorMigrationReceipt(input: {
   const { receipt, priorReceipt } = input;
   if (!isUpdateMigrationReceiptCurrent(receipt, input.expectedVersion)) return false;
   if (!receipt || path.resolve(receipt.root) !== path.resolve(input.root)) return false;
-  if (!String(receipt.source || '').startsWith('doctor-')) return false;
+  if (receipt.source !== 'doctor-migration') return false;
   if (!priorReceipt) return true;
   return receipt.generated_at !== priorReceipt.generated_at
     || receipt.source !== priorReceipt.source
@@ -2238,7 +2133,7 @@ function globalSksRootPath(env: NodeJS.ProcessEnv = process.env): string {
 
 function updateDoctorTimeoutMs(env: NodeJS.ProcessEnv): number {
   const override = Number.parseInt(env.SKS_UPDATE_NEW_DOCTOR_TIMEOUT_MS || env.SKS_MIGRATION_DOCTOR_TIMEOUT_MS || '', 10);
-  return Number.isFinite(override) && override > 0 ? override : 180_000;
+  return Number.isFinite(override) && override > 0 ? Math.min(override, 600_000) : 180_000;
 }
 
 async function updateHeartbeat<T>(quiet: boolean, label: string, work: Promise<T>, warnAfterMs = 60_000): Promise<T> {

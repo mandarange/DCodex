@@ -1,9 +1,13 @@
 import {
   DEFAULT_SUBAGENT_EFFORT,
+  ASTRA_SUBAGENT_MODEL,
+  LUNA_SUBAGENT_MODEL,
   LUNA_SUBAGENT_EFFORT,
   SOL_MAX_SUBAGENT_EFFORT,
   TERRA_SUBAGENT_EFFORT,
-  decideSubagentModel
+  NARUTO_PARENT_MODEL,
+  decideSubagentModel,
+  type SubagentModelPolicyId
 } from '../subagents/model-policy.js';
 
 export type TaskCategory = 'quick' | 'standard' | 'agentic' | 'ultrabrain' | 'verify' | 'review' | 'e2e' | 'refactor' | 'strategy';
@@ -34,7 +38,8 @@ const CATEGORY_POLICY: Record<TaskCategory, Omit<ModelChoice, 'model'>> = {
   strategy: { reasoning: 'max', serviceTier: 'fast' }
 };
 
-export const NARUTO_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'] as const;
+export const NARUTO_MODELS = [LUNA_SUBAGENT_MODEL, ASTRA_SUBAGENT_MODEL] as const;
+// Keep the exported type and helper names compatible with existing callers.
 export type NarutoGpt56Model = typeof NARUTO_MODELS[number];
 
 const E2E_WORK_RE = /(e2e|end[-\s]?to[-\s]?end|test_execution|browser|chrome|computer[-\s]?use|computer\s+use|cross[-\s]?app|playwright|selenium|puppeteer|브라우저|컴퓨터\s*유즈)/i;
@@ -98,7 +103,7 @@ export function routeNarutoGpt56Model(input: {
   const usable = available.filter((model) => !degraded.has(model));
   const availableEfforts = effortsForModel(input.availableModelEfforts, preferred);
   const intendedReasoning: ModelReasoning = explicit
-    ? reasoningForExplicitModel(explicit, automatic.policy === 'sol_max_judgment')
+    ? reasoningForExplicitModel(explicit, automatic.policy)
     : automatic.modelReasoningEffort;
   const model = !invalidExplicit && usable.includes(preferred) && (availableEfforts == null || availableEfforts.includes(intendedReasoning)) ? preferred : '';
   return { model, reasoning: intendedReasoning, serviceTier: 'fast' };
@@ -114,13 +119,14 @@ export function normalizeNarutoGpt56Model(value: unknown): NarutoGpt56Model | nu
 }
 
 /**
- * Child Naruto threads must keep sealed Luna/Terra/Sol High/Sol Max role profiles
- * when the Codex App main model is already in the GPT-5.6 family. Only
+ * Child Naruto threads keep sealed Luna Max/Astra High/Max/Medium role profiles
+ * when the Codex App main model is Astra or a legacy managed GPT-5.6 model. Only
  * third-party/session models inherit onto children for provider continuity.
  */
 export function childInheritsActiveMainModel(value: unknown): boolean {
-  const model = String(value || '').trim();
-  return Boolean(model) && !isNarutoGpt56Model(model);
+  const model = String(value || '').trim().toLowerCase();
+  return Boolean(model) && model !== NARUTO_PARENT_MODEL && !isNarutoGpt56Model(model)
+    && model !== 'gpt-5.6-sol' && model !== 'gpt-5.6-terra';
 }
 
 export function categoryForWorkerRole(role: string, taskText = ''): TaskCategory {
@@ -151,8 +157,8 @@ function effortsForModel(catalog: Record<string, string[]> | null | undefined, m
   return (match?.[1] || []).map((effort) => String(effort).toLowerCase());
 }
 
-function reasoningForExplicitModel(model: NarutoGpt56Model, judgment: boolean): ModelReasoning {
-  if (model === 'gpt-5.6-luna') return LUNA_SUBAGENT_EFFORT;
-  if (model === 'gpt-5.6-terra') return TERRA_SUBAGENT_EFFORT;
-  return judgment ? SOL_MAX_SUBAGENT_EFFORT : DEFAULT_SUBAGENT_EFFORT;
+function reasoningForExplicitModel(model: NarutoGpt56Model, policy: SubagentModelPolicyId): ModelReasoning {
+  if (model === LUNA_SUBAGENT_MODEL) return LUNA_SUBAGENT_EFFORT;
+  if (policy === 'terra_max_context_tools') return TERRA_SUBAGENT_EFFORT;
+  return policy === 'sol_max_judgment' ? SOL_MAX_SUBAGENT_EFFORT : DEFAULT_SUBAGENT_EFFORT;
 }

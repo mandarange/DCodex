@@ -35,7 +35,7 @@ import {
 import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
 import {
   ARCHITECTURE_MAP_EXTRACTOR_IDS,
-  architectureMapGraphExtractors
+  alignGraphExtractors
 } from '../triwiki/context-graph/extractors/index.js';
 import { computeContextGraphCacheKey } from '../triwiki/context-graph/compiler/cache-key.js';
 import { walkCodeInventory } from '../triwiki/context-graph/extractors/code/inventory.js';
@@ -285,7 +285,7 @@ async function runLocked(
     && plan.acceptance.absent_or_existing_triwiki_supported === true;
   ledger.validation.prior_state_ignored = true;
 
-  const extractorIdentities = architectureMapGraphExtractors();
+  const extractorIdentities = alignGraphExtractors();
   const inventory = walkCodeInventory(root, CODE_NAVIGATION_LIMITS);
   const inputHashes = codeInventoryInputHashes(inventory);
   const codeInventoryDigest = crypto
@@ -313,7 +313,7 @@ async function runLocked(
   ledger.validation.source_inventory_complete = fatalSkips.length === 0;
   if (fatalSkips.length) throw new Error(`code_navigation_fatal_skips:${fatalSkips.map((skip) => `${skip.reason}:${skip.path}`).join('|')}`);
 
-  const extractors = architectureMapGraphExtractors({ preparedInventory: inventory });
+  const extractors = alignGraphExtractors({ preparedInventory: inventory });
   const generatedAt = nowIso();
   const compiled = await compileContextGraph({
     root,

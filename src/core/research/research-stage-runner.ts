@@ -17,7 +17,7 @@ import { buildResearchSourceShardPrompt, defaultResearchSourceShardOutput, resea
 import { linkSourceLedgerToClaimMatrix, mergeResearchSourceShards } from './research-source-ledger-merge.js'
 import { writeSourceQualityReport } from './source-quality-report.js'
 import { runResearchFalsification } from './research-falsification-runner.js'
-import { evaluateResearchGate, researchPaperArtifactForPlan, RESEARCH_PAPER_SECTION_GROUPS, RESEARCH_REVIEWER_CUSTOM_AGENT } from '../research.js'
+import { evaluateResearchGate, researchPaperArtifactForPlan, RESEARCH_PAPER_SECTION_GROUPS } from '../research.js'
 import { runResearchSuperSearchShard } from './research-super-search.js'
 import {
   RESEARCH_ADVERSARIAL_PLAN_ARTIFACT,
@@ -417,15 +417,15 @@ async function runFinalReviewStage(input: StageInput, startedAt: string): Promis
     RESEARCH_CONVERGENCE_GATE_ARTIFACT,
     RESEARCH_HONEST_MODE_ARTIFACT,
     'agent-ledger.json',
-    'debate-ledger.json',
-    'genius-opinion-summary.md'
+    'debate-ledger.json'
   ], merged.blockers || [], {
     approved: merged.approved === true,
     official_subagent_review: true,
     review_cycles: adversarial.gate?.review_cycles || 0,
     revision_cycles: adversarial.gate?.revision_cycles || 0,
     unresolved_critical_objections: adversarial.gate?.unresolved_critical_objections ?? null,
-    all_reviewers_approved: adversarial.gate?.all_reviewers_approved === true
+    unresolved_major_objections: adversarial.gate?.unresolved_major_objections ?? null,
+    advisory_objections: adversarial.gate?.advisory_objections ?? null
   })
 }
 
@@ -535,8 +535,6 @@ async function buildResearchGateSeed(dir: string, plan: any, input: StageInput) 
   const finalReview = await readJson(path.join(dir, 'research-final-review.json'), null)
   const adversarialGate = await readJson(path.join(dir, RESEARCH_CONVERGENCE_GATE_ARTIFACT), null)
   const honest = await readJson(path.join(dir, RESEARCH_HONEST_MODE_ARTIFACT), null)
-  const agentLedger = await readJson(path.join(dir, 'agent-ledger.json'), null)
-  const debateLedger = await readJson(path.join(dir, 'debate-ledger.json'), null)
   const falsificationLedger = await readJson(path.join(dir, 'falsification-ledger.json'), null)
   const experimentPlan = await readJson(path.join(dir, 'experiment-plan.json'), null)
   const paper = researchPaperArtifactForPlan(plan)
@@ -544,14 +542,11 @@ async function buildResearchGateSeed(dir: string, plan: any, input: StageInput) 
     ...(Array.isArray(sourceLedger?.sources) ? sourceLedger.sources : []),
     ...(Array.isArray(sourceLedger?.counterevidence_sources) ? sourceLedger.counterevidence_sources : [])
   ]
-  const agents = Array.isArray(agentLedger?.agents) ? agentLedger.agents : []
-  const exchanges = Array.isArray(debateLedger?.exchanges) ? debateLedger.exchanges : []
   const sourceLayers = Array.isArray(sourceLedger?.source_layers) ? sourceLedger.source_layers : []
   const falsificationCases = Array.isArray(falsificationLedger?.cases) ? falsificationLedger.cases : []
   const experimentSteps = Array.isArray(experimentPlan?.steps) ? experimentPlan.steps : []
   const reportPresent = await exists(path.join(dir, 'research-report.md'))
   const paperText = await readText(path.join(dir, paper), '')
-  const summaryPresent = await exists(path.join(dir, 'genius-opinion-summary.md'))
   return {
     passed: finalReview?.approved === true && adversarialGate?.passed === true,
     execution_class: input.mock || input.backend === 'mock' || input.backend === 'deterministic' ? 'mock_fixture' : 'real',
@@ -559,12 +554,8 @@ async function buildResearchGateSeed(dir: string, plan: any, input: StageInput) 
     research_paper_artifact: paper,
     paper_present: Boolean(paperText.trim()),
     paper_sections: RESEARCH_PAPER_SECTION_GROUPS.filter((group: readonly string[]) => group.some((heading) => paperText.toLowerCase().includes(heading))).length,
-    genius_opinion_summary_present: summaryPresent,
-    genius_opinion_summaries: agents.length,
     research_source_skill_present: await exists(path.join(dir, 'research-source-skill.md')),
     source_ledger_present: Boolean(sourceLedger),
-    agent_ledger_present: Boolean(agentLedger),
-    debate_ledger_present: Boolean(debateLedger),
     novelty_ledger_present: await exists(path.join(dir, 'novelty-ledger.json')),
     falsification_ledger_present: Boolean(falsificationLedger),
     web_search_passes: Number(sourceLedger?.web_search_passes || 0),
@@ -572,18 +563,7 @@ async function buildResearchGateSeed(dir: string, plan: any, input: StageInput) 
     source_layers_required: sourceLayers.length,
     source_layers_covered: sourceLayers.filter((layer: any) => layer.status === 'covered').length,
     triangulation_checks: Array.isArray(sourceLedger?.triangulation?.cross_layer_checks) ? sourceLedger.triangulation.cross_layer_checks.length : 0,
-    independent_agents: agents.filter((agent: any) => Array.isArray(agent.findings) && agent.findings.length > 0).length,
     xhigh_agents: 0,
-    sol_max_policy_agents: agents.filter((agent: any) => {
-      const policy = agent?.model_policy && typeof agent.model_policy === 'object' ? agent.model_policy : agent
-      return policy.custom_agent === RESEARCH_REVIEWER_CUSTOM_AGENT && policy.model === 'gpt-5.6-sol' && (policy.reasoning_effort === 'max' || policy.model_reasoning_effort === 'max')
-    }).length,
-    eureka_moments: agents.filter((agent: any) => agent.eureka?.exclamation === 'Eureka!' && String(agent.eureka?.idea || '').trim()).length,
-    agent_findings: agents.reduce((sum: number, agent: any) => sum + (Array.isArray(agent.findings) ? agent.findings.length : 0), 0),
-    debate_participants: new Set(exchanges.flatMap((exchange: any) => [exchange?.from, exchange?.to].filter(Boolean))).size,
-    debate_exchanges: exchanges.length,
-    consensus_iterations: Number(debateLedger?.consensus_iterations || adversarialGate?.review_cycles || 0),
-    unanimous_consensus: adversarialGate?.passed === true && debateLedger?.unanimous_consensus === true,
     counterevidence_sources: Array.isArray(sourceLedger?.counterevidence_sources) ? sourceLedger.counterevidence_sources.length : 0,
     candidate_insights: Array.isArray(claimMatrix?.claims) ? claimMatrix.claims.length : 0,
     falsification_passes: falsificationCases.length ? 1 : 0,
@@ -603,7 +583,7 @@ async function buildResearchGateSeed(dir: string, plan: any, input: StageInput) 
       RESEARCH_CONVERGENCE_GATE_ARTIFACT,
       RESEARCH_HONEST_MODE_ARTIFACT
     ],
-    notes: ['Counts and consensus are projected from recorded artifacts; no reviewer success is inferred from lifecycle completion alone.']
+    notes: ['Reviewer acceptance is derived from evidence-correlated structured outcomes; lifecycle completion alone is insufficient.']
   }
 }
 

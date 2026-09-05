@@ -146,6 +146,9 @@ test('publishing a generation does not move the cache key it was built under', a
     writeFixtureFile(root, `${store}/context-graph.meta.json`, '{"schema":"v2"}\n');
     writeFixtureFile(root, `${store}/generations/deadbeef.idx`, 'SKSCG2-binary-payload');
     writeFixtureFile(root, `${store}/generations/deadbeef.meta.json`, '{"operationId":"op-1"}\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/code-navigation-manifest.json', '{"inventory":"generated"}\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/architecture-map/manifest.json', '{"graph":"generated"}\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/architecture-map/views/project-topology.mmd', 'graph TD\n');
     const published = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
 
     assert.equal(published.parts.wikiContextHash, before.parts.wikiContextHash, 'publishing must not move the wiki hash');
@@ -162,6 +165,9 @@ test('publishing a generation does not move the cache key it was built under', a
     writeFixtureFile(root, 'src/a.ts', 'export const A = 2;\n');
     const afterSourceEdit = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
     assert.notEqual(afterSourceEdit.key, before.key, 'a source edit must still move the key');
+    writeFixtureFile(root, 'architecture-map/app.ts', 'export const app = 1;\n');
+    const outsideWiki = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
+    assert.notEqual(outsideWiki.key, afterSourceEdit.key, 'the artifact exclusion must stay inside .sneakoscope/wiki');
   } finally {
     removeFixtureRoot(root);
   }

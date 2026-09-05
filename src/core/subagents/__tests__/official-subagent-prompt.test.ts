@@ -30,12 +30,12 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
     ]
   })
 
-  assert.match(prompt, /gpt-5\.6-sol with max reasoning/)
+  assert.match(prompt, /gpt-6-astra with max reasoning/)
   assert.match(prompt, /worker.*gpt-5\.6-luna.*max reasoning.*tiny short-context mechanical/)
-  assert.match(prompt, /gpt-5\.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation/)
-  assert.match(prompt, /gpt-5\.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security/)
-  assert.match(prompt, /gpt-5\.6-terra with max reasoning for long context\/memory, large docs\/repository reads or exploration, large-scale first-draft code processing/)
-  assert.match(prompt, /never collapse every child onto the parent Sol model/)
+  assert.match(prompt, /gpt-6-astra with high reasoning for ordinary UI, logic, backend, and native implementation/)
+  assert.match(prompt, /gpt-6-astra with max reasoning only for focused unresolved, high-risk, final-review, architecture, security/)
+  assert.match(prompt, /gpt-6-astra with medium reasoning for long context\/memory, large docs\/repository reads or exploration, large-scale first-draft code processing/)
+  assert.match(prompt, /preserve each sealed role model and effort instead of applying the parent profile to every child/)
   assert.match(prompt, /explicit task class and phase win over incidental keywords/)
   assert.match(prompt, /requested subagents: 2/)
   assert.match(prompt, /max concurrently open child agent threads: 12/)
@@ -52,7 +52,7 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /\[A\].*`worker`/)
   assert.match(prompt, /\[B\].*`architecture_reviewer`/)
   assert.match(prompt, /model policy: luna_max_mechanical \(gpt-5\.6-luna\/max\)/)
-  assert.match(prompt, /model policy: sol_max_judgment \(gpt-5\.6-sol\/max\)/)
+  assert.match(prompt, /model policy: sol_max_judgment \(gpt-6-astra\/max\)/)
   assert.match(prompt, /mode: read-only/)
   assert.match(prompt, /metadata mode: on-demand \(2\/25 roles included; full catalog is not injected\)/)
   assert.equal(prompt.match(/Core Engineering Directive/g)?.length, 1)
@@ -74,7 +74,7 @@ test('official prompt teaches capacity-derived automatic fan-out and the hard ce
 
   assert.match(prompt, /automatic fan-out is capacity-derived up to 256/)
   assert.match(prompt, /historical 4\/6\/8\/16 task-class values are fallback hints, not clamps/)
-  assert.match(prompt, /in mass fan-out, use worker\/Luna Max for tiny mechanical shards and explorer\/Terra Max for broad exploration; reserve Sol for implementation\/judgment/)
+  assert.match(prompt, /in mass fan-out, use worker\/Luna Max for tiny mechanical shards and explorer\/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment/)
   assert.match(prompt, /bounded only by the 256 hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total/)
 })
 
@@ -145,7 +145,7 @@ test('parent-required prompt preserves third-party active main models for childr
   assert.match(prompt, /do not substitute a managed GPT model for the active main model openrouter:moonshotai\/kimi-k3/)
 })
 
-test('GPT-5.6 Sol active main keeps sealed Luna and Terra child profiles', () => {
+test('GPT-5.6 Sol active main keeps sealed Luna and Astra child profiles', () => {
   const prompt = buildOfficialSubagentPrompt({
     goal: 'Search the repository and apply a tiny rename',
     maxThreads: 4,
@@ -176,9 +176,9 @@ test('GPT-5.6 Sol active main keeps sealed Luna and Terra child profiles', () =>
     ]
   })
 
-  assert.match(prompt, /children must keep sealed Luna\/Terra\/Sol High\/Sol Max role profiles/)
-  assert.match(prompt, /never replace Luna or Terra with the parent Sol model/)
-  assert.match(prompt, /pass model="gpt-5\.6-terra" and reasoning_effort="max" from the sealed role policy/)
+  assert.match(prompt, /children must keep sealed Luna Max\/Astra Medium\/Astra High\/Astra Max role profiles/)
+  assert.match(prompt, /never replace a sealed role profile with the parent profile/)
+  assert.match(prompt, /pass model="gpt-6-astra" and reasoning_effort="medium" from the sealed role policy/)
   assert.match(prompt, /pass model="gpt-5\.6-luna" and reasoning_effort="max" from the sealed role policy/)
   assert.doesNotMatch(prompt, /pass the exact active main model="gpt-5\.6-sol"/)
 })

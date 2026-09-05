@@ -4,6 +4,7 @@
     {
       "canonical_name": "sks",
       "trusted_sha256": [
+        "905fc5472d36f0780b56f0e09404f42ea20293b1a4615d2050b7db3043231dbd",
         "6d90142f3617a8ae92d9af8cb2fc18ab58a7d0070868504e1fe89e0effc305a5",
         "5b17aeb1484e9e2b3791bff6dcb175f30857f47e71b36eb0340e575385e8e82b"
       ]
@@ -18,6 +19,7 @@
     {
       "canonical_name": "sks-answer",
       "trusted_sha256": [
+        "f3f84bc126da78789e4495b6c13019e9848c462211f1d86fa3e7929487b584c9",
         "0e461537093215960734aaeafdccb125d2c3ca139dab5db8548d5c0bdd14d652",
         "3056ac543fa074868c7023097fdcb042d7175ab557d8e18cb7d92ce872785452",
         "bc8e2fc157b6c9819d32bb0a41bdf7f599a07693df18b0d80aa0ba103594f6eb"
@@ -26,6 +28,7 @@
     {
       "canonical_name": "sks-autoresearch",
       "trusted_sha256": [
+        "50e8c569cc9da4ba774581b27ca34824d65576641f7d7861f301c9315cd07432",
         "0b0a626be3b2e4f80462b721787287350af08ccdf8e952b8eb563a294a8cb777",
         "42602109bc1bf36b28a9acd0c458ab6c3b87f412c2710052e1c65a1f7b0cfeb8"
       ]
@@ -66,6 +69,7 @@
     {
       "canonical_name": "sks-computer-use-fast",
       "trusted_sha256": [
+        "b5dafeb7c22d63f34a9015ce83f897f15ef0eb80b0f0f1107c2f86957681d916",
         "1d191ed0f9490fc320dd17b871ca556fa5835bfb372c38b62f3985e3369f685a",
         "57e4c1d04ae785b0a53711e53210f2ddabd6131041b97edb4b6d99f18b24155e",
         "b270d82e4057934d7f92ed4241d4ae86e22d0a9a08bceba1aa179d7535bda042",
@@ -75,6 +79,7 @@
     {
       "canonical_name": "sks-context7-docs",
       "trusted_sha256": [
+        "38007921cb842c63fee24306584439c9d766cea999141b731765938791bee841",
         "694cdfab8ee25c86d906b0eab5064c067dd05d9be9a8c1beec67f843ab602a42",
         "f3618fa72800899ffbe1686bed6bc888997bfb007a14f0e17c9a26178d55262a"
       ]
@@ -82,6 +87,7 @@
     {
       "canonical_name": "sks-cu",
       "trusted_sha256": [
+        "50a16e4fb21d5d3be6d8dc716475b642aea8033414e0b4929730a2b32f8062e3",
         "be9a3eb7197483693f354e5f7e5a8eb2c0dc0209597cea53479e2e803ad39479",
         "fc6ed807d0299dd56441738d9388787b1dd857dab9bb4c31a11f7d9b90b424d0",
         "da480ba03208d4888df1e97bbec6d80d608dafad0e33c2b1c72266e1860476a8"
@@ -90,6 +96,7 @@
     {
       "canonical_name": "sks-db",
       "trusted_sha256": [
+        "61f696ec7c95a024eea664bb28a8a969e1360ddd4bd73053d293bc79665f910b",
         "65ecf818f21a5c36865619bcb1f542ead7ab2974c5c7c3488ac7b4037b9c85d6",
         "e3912adaf37f9be002b012c89c18ff987c9cd16ea2445600c834fa39a5bf865a"
       ]
@@ -131,6 +138,7 @@
     {
       "canonical_name": "sks-fast-mode",
       "trusted_sha256": [
+        "ea6a5da45a3a8065dc3b78be1cabc864a963c685ae3084323471280ef03917a5",
         "0d42a799afc84d74bfe8c5855ab85adce0e945a10a10514b4d7e4b8c90eb16b6",
         "257daa08de3807d47c0941ac21ef1f89af2f7f670b0c34059d3234a5a8bfb36b"
       ]
@@ -145,6 +153,7 @@
     {
       "canonical_name": "sks-fast-on",
       "trusted_sha256": [
+        "b64e4a7afb45db1731f52a0ed29ef1edec7e5538cc81561f75bb715d37455a6e",
         "d136b65559bb87e22bb5818a065dfa7ec94ac21aa445f492a4fc70f92a364eff",
         "0355482a0baf32d8ac2131bdd88fb5fed5a3a9ea7ab82f12e26075bc8ea8c724"
       ]
@@ -167,6 +176,7 @@
     {
       "canonical_name": "sks-goal",
       "trusted_sha256": [
+        "5ab1ac18fc265c375bae92ff23ddbd80c378484d6629c378f0e9270e660ded11",
         "867544877ac04df6e0232d6d425797e7fab2cceff9a7176a3c9e61f8c4a416d7",
         "0db0c58e72c0d58b24163371efe7a647c67d5d232020b2b4ed2557f19fe648d7"
       ]
@@ -174,6 +184,7 @@
     {
       "canonical_name": "sks-gx",
       "trusted_sha256": [
+        "165974015298362c9dac6d97b71c9865f42174a649dd85fe2e97ade6c6fd7c77",
         "53a9e538812e79549d0dfa7ae9da6b3d95672281d9b601ecd55f7d5ac64fcd44",
         "55b7d535a5978077462eb4c71226b9fdc772094f91ca336830315de10666e85e"
       ]
@@ -224,6 +235,7 @@
     {
       "canonical_name": "sks-hproof-evidence-bind",
       "trusted_sha256": [
+        "fe9cc94d027e161d12509af86aa39616ac76efe53d049a8bb90fddcdd1e7a7b5",
         "9629257ef1b78b13b503ad1033f500ea8ef898fb74ba50d78a2a72143b7ead4f",
         "fa20989183324964b5527742c0b1f593eacfcd3090b1707fb7c52258cdf62637"
       ]
@@ -270,6 +282,7 @@
     {
       "canonical_name": "sks-naruto",
       "trusted_sha256": [
+        "a1219f6dbad9c8c185953125ef0b8dccf081aa01efb8e8acaa543c6214ac049c",
         "d0d5968e78ac25e1d3e588735de1ddbcf149cfb3165edebca5dec1ed7c7a5c46",
         "34222c72e4e1ead3584907f4d905444b7de820283ee7348018f110d5e6b04461",
         "f8e808622e222b4ad7dcb2907e5f06a890db83139ae443ec6c8c33781dfa3e37",
@@ -286,6 +299,7 @@
     {
       "canonical_name": "sks-pipeline-runner",
       "trusted_sha256": [
+        "fd06dfb27be41e5ffec3e3ec8c5362289f5919cf2afa9da5ab6b97e7baa4a0ac",
         "66e105773b8e042eec5d5679b97b7cb305cad8d45671034907fbfa728fc4d68a",
         "020ba4da2f96bcda23cee4596b1e790816780178f1917dee748ff4b289cba0e5",
         "ffcbe0ea4b585e3d2886f1d9fa7a3b88706aaf42182fb177b2371b76beb0ddcd"
@@ -301,6 +315,7 @@
     {
       "canonical_name": "sks-ppt",
       "trusted_sha256": [
+        "1d4de05afd42ee5739c0ed925af9e0ac4785fc746e659c60d3d908d465e6386c",
         "02e8a0758ec6d056ce9851a5a4505b1d32e302e730be3eb169a41392a5d6b2e2",
         "329fc6ee24bb04478b18fb6ccd3691cd7cbb50e1b77ca7b6136383d00b3b0bb4"
       ]
@@ -308,6 +323,7 @@
     {
       "canonical_name": "sks-prompt-pipeline",
       "trusted_sha256": [
+        "e7c8ef56d38fdc4879c983f7d6706f26fc1cf0a60c508836bd628e815700bcc3",
         "480c8afffafa9d52c483a963b4b8fafdffc0a47cd6d2efd3fb6d7924c11832c5",
         "5dc8524de9bad66cef133ea5ff2a8052331bd12a7ec85695f727d0d2c8523145"
       ]
@@ -321,6 +337,8 @@
     {
       "canonical_name": "sks-reasoning-router",
       "trusted_sha256": [
+        "da0ddb58adc68ddeebdb9c45bf111c26eaa64d3e9dffe1dd39d7f30b943b8b88",
+        "1595beabf2d31397217311fa1323bd62c801cf6c87db9029ff544c457efec8bb",
         "a7d879d157c6d5b6b81a67dba7b5b731ac18ea986841fe1ab2cafbd6623481c3",
         "dc0b8c6a4093269c2c36b58432b25409704d06fea8ca558f43b598625ca0d9de"
       ]
@@ -328,6 +346,7 @@
     {
       "canonical_name": "sks-reflection",
       "trusted_sha256": [
+        "d5b6e80644a55a50b60961fe3aa5ae342fd035b39605a07d13dcc82fb0f0149c",
         "5013cefe58746a23e998bd83dedf2c4de9270010297be6fc0c0f0ae2aae73fb8",
         "4ba8b2778d1d37c25c89f1a97ce3ce5602c39138425e1f4af4a91e840a961670"
       ]
@@ -342,6 +361,7 @@
     {
       "canonical_name": "sks-research",
       "trusted_sha256": [
+        "8903022e98fa470cd764f7c8d1b28d4f996d6daf146260f20548acbe1276c55a",
         "2e96f95315d99b645d4171ba4648d9f9218ec3e98dcd6d363b5de522d2e1bfe3"
       ]
     },
@@ -381,6 +401,7 @@
     {
       "canonical_name": "sks-turbo-context-pack",
       "trusted_sha256": [
+        "7e46ced781acf7de50db07ccbf801f76b9b1717e21b683a8008d089b62b54456",
         "c02745666f6d9485c538876e77509209ecf5f481d1d7bed36e312eea60688f06",
         "d94bb85ea836e55c5b2b0df237821cf97b3d2ec6bfe697c97525f3fa5807b200"
       ]
@@ -388,6 +409,7 @@
     {
       "canonical_name": "sks-wiki",
       "trusted_sha256": [
+        "a6b3cf12e88b413073525c146aa27287557536b5a48eade83b87a11d8f371c72",
         "460a7dd5498fbf68697da64d6a56122ca088607edea8f815eea54aca580895fe",
         "b49e0bbe6163e8673b9d2d34a43f8ec130ac7032cacabe17e6fece6182f96be0",
         "16b2b813d202ca51d2ea4fe0da918eddf9494db7ab1356352d4188a5da3496b1"

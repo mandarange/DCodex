@@ -6,11 +6,13 @@ import {
   ALIGN_LEDGER_ARTIFACT,
   ALIGN_PLAN_ARTIFACT,
   alignNextActionText,
-  refreshAlignGate
+  refreshAlignGate,
+  writeAlignRouteArtifacts
 } from '../align/align-route.js';
 import { projectRoot, readJson } from '../fsx.js';
 import {
   findLatestMission,
+  loadOwnedRouteState,
   missionDir,
   validateExternallyReservedMissionId
 } from '../mission.js';
@@ -41,7 +43,13 @@ async function prepareAlignMission(root: string, args: any[]) {
   return { prepared, missionId: String(prepared?.mission_id || '').trim(), task };
 }
 
-function commandResult(prepared: any, missionId: string, action: 'prepare' | 'run') {
+function commandResult(
+  prepared: any,
+  missionId: string,
+  action: 'prepare' | 'run',
+  options: { maintenance?: boolean; activeStopGate?: string | null } = {}
+) {
+  const maintenance = options.maintenance === true;
   return {
     schema: 'sks.align-command.v3',
     schema_version: 3,
@@ -49,14 +57,21 @@ function commandResult(prepared: any, missionId: string, action: 'prepare' | 'ru
     action,
     mission_id: missionId || null,
     route: prepared?.route?.command ? sksPrefixedDollarCommand(prepared.route.command) : '$sks-align',
-    stop_gate: prepared?.route?.stopGate || ALIGN_GATE_ARTIFACT,
+    stop_gate: maintenance ? options.activeStopGate || null : prepared?.route?.stopGate || ALIGN_GATE_ARTIFACT,
+    align_gate: missionId ? `.sneakoscope/missions/${missionId}/${ALIGN_GATE_ARTIFACT}` : null,
     artifacts: missionId ? {
       plan: `.sneakoscope/missions/${missionId}/${ALIGN_PLAN_ARTIFACT}`,
       ledger: `.sneakoscope/missions/${missionId}/${ALIGN_LEDGER_ARTIFACT}`,
       gate: `.sneakoscope/missions/${missionId}/${ALIGN_GATE_ARTIFACT}`,
-      work_order_ledger: `.sneakoscope/missions/${missionId}/work-order-ledger.json`
+      ...(maintenance ? {} : { work_order_ledger: `.sneakoscope/missions/${missionId}/work-order-ledger.json` })
     } : null,
-    next_action: missionId ? alignNextActionText(missionId) : 'prepare_failed',
+    next_action: !missionId
+      ? 'prepare_failed'
+      : action === 'prepare'
+        ? alignNextActionText(missionId)
+        : maintenance
+          ? `Continue active route ${missionId}`
+          : `Run sks align proof ${missionId}`,
     additional_context: prepared?.additionalContext || null
   };
 }
@@ -77,8 +92,20 @@ async function alignPrepare(args: any[]) {
 async function alignRun(args: any[]) {
   const root = await projectRoot();
   const requested = positionalArgs(args)[0] || '';
+  const ownership = await alignRunOwnership(root, requested);
   let missionId = requested.startsWith('M-') ? await resolveAlignMissionId(root, [requested]) : null;
   let prepared: any = null;
+  if (!missionId && ownership.active_align_mission_id) {
+    missionId = await resolveAlignMissionId(root, [ownership.active_align_mission_id]);
+  }
+  if (!missionId && ownership.maintenance_mission_id) {
+    missionId = ownership.maintenance_mission_id;
+    await writeAlignRouteArtifacts(
+      missionDir(root, missionId),
+      missionId,
+      'Refresh repository code-navigation context for the active route'
+    );
+  }
   if (!missionId) {
     const created = await prepareAlignMission(root, args);
     prepared = created.prepared;
@@ -87,9 +114,13 @@ async function alignRun(args: any[]) {
   if (!missionId) return missing(args);
   const execution = await executeCodeNavigationAlign({ root, missionDir: missionDir(root, missionId), missionId });
   const result = {
-    ...commandResult(prepared, missionId, 'run'),
+    ...commandResult(prepared, missionId, 'run', {
+      maintenance: Boolean(ownership.maintenance_mission_id),
+      activeStopGate: ownership.active_stop_gate
+    }),
     ok: execution.ok,
     status: execution.gate.status,
+    active_route_preserved: Boolean(ownership.maintenance_mission_id),
     gate: execution.gate,
     ledger: execution.ledger
   };
@@ -101,6 +132,36 @@ async function alignRun(args: any[]) {
     for (const blocker of execution.gate.blockers) console.log(`- ${blocker}`);
   }
   return result;
+}
+
+interface AlignRunOwnership {
+  active_align_mission_id: string | null;
+  maintenance_mission_id: string | null;
+  active_stop_gate: string | null;
+}
+
+async function alignRunOwnership(root: string, requested: string): Promise<AlignRunOwnership> {
+  const sessionKey = process.env.SKS_NARUTO_STANDALONE_CLI === '1'
+    ? ''
+    : String(process.env.CODEX_THREAD_ID || '').trim();
+  if (requested) return { active_align_mission_id: null, maintenance_mission_id: null, active_stop_gate: null };
+  const state = await loadOwnedRouteState(root, sessionKey);
+  const active = Boolean(state?.mission_id)
+    && state.route_closed !== true
+    && !/(?:DONE|COMPLETE|CLOSED|BLOCKED|FAILED)$/i.test(String(state.phase || ''));
+  if (!active) return { active_align_mission_id: null, maintenance_mission_id: null, active_stop_gate: null };
+  const activeRoute = String(state.route || state.route_command || state.mode || '')
+    .replace(/^\$/, '')
+    .replace(/[-_]/g, '')
+    .toUpperCase();
+  if (activeRoute === 'ALIGN') {
+    return { active_align_mission_id: String(state.mission_id), maintenance_mission_id: null, active_stop_gate: String(state.stop_gate || ALIGN_GATE_ARTIFACT) };
+  }
+  return {
+    active_align_mission_id: null,
+    maintenance_mission_id: String(state.mission_id),
+    active_stop_gate: state.stop_gate == null ? null : String(state.stop_gate)
+  };
 }
 
 async function alignStatus(args: any[]) {

@@ -1,7 +1,8 @@
 import path from 'node:path';
+import { ASTRA_SUBAGENT_MODEL, SUBAGENT_EFFORT } from './subagents/model-policy.js';
 import { appendJsonlBounded, nowIso, readJson, readText, writeJsonAtomic, writeTextAtomic, exists } from './fsx.js';
 import { OUTCOME_RUBRIC } from './proof-field.js';
-import { RESEARCH_AGENT_PERSONA_CONTRACT, validateResearchAgentPersonas } from './recallpulse.js';
+import { RESEARCH_REVIEWER_CONTRACT } from './recallpulse.js';
 import { CLAIM_EVIDENCE_MATRIX_ARTIFACT, defaultClaimEvidenceMatrix, readClaimEvidenceMatrix, validateClaimEvidenceMatrix, writeClaimEvidenceMatrix } from './research/claim-evidence-matrix.js';
 import { EXPERIMENT_PLAN_JSON_ARTIFACT, EXPERIMENT_PLAN_MARKDOWN_ARTIFACT, defaultExperimentPlan, readExperimentPlan, validateExperimentPlan, writeExperimentPlan } from './research/experiment-plan.js';
 import { IMPLEMENTATION_BLUEPRINT_ARTIFACT, defaultImplementationBlueprint, readImplementationBlueprint, validateImplementationBlueprint, writeImplementationBlueprint } from './research/implementation-blueprint.js';
@@ -32,7 +33,6 @@ export { RESEARCH_SOURCE_LAYER_IDS, RESEARCH_SOURCE_LAYERS } from './research/re
 
 export const RESEARCH_PAPER_ARTIFACT = 'research-paper.md';
 export const RESEARCH_SOURCE_SKILL_ARTIFACT = 'research-source-skill.md';
-export const RESEARCH_GENIUS_SUMMARY_ARTIFACT = 'genius-opinion-summary.md';
 export const RESEARCH_REVIEWER_CUSTOM_AGENT = 'research_reviewer';
 export const RESEARCH_REVIEWER_CONFIG_ARTIFACT = '.codex/agents/research-reviewer.toml';
 const RESEARCH_ADVERSARIAL_REVIEW_LEDGER_ARTIFACT = 'research-adversarial-review.json';
@@ -95,7 +95,7 @@ export function researchAgentAgentName(agent: any = {}) {
   return String(agent.agent_name || agent.display_name || agent.label || agent.id || 'Research Agent').trim();
 }
 
-export const RESEARCH_AGENT_COUNCIL = Object.freeze(RESEARCH_AGENT_PERSONA_CONTRACT.map((agent: any) => {
+export const RESEARCH_AGENT_COUNCIL = Object.freeze(RESEARCH_REVIEWER_CONTRACT.map((agent: any) => {
   const displayName = agent.display_name || agent.label || agent.id;
   return Object.freeze({
     ...agent,
@@ -107,10 +107,6 @@ export const RESEARCH_AGENT_COUNCIL = Object.freeze(RESEARCH_AGENT_PERSONA_CONTR
   });
 }));
 
-function validateResearchAgentLedger(agentLedger: any = {}, geniusSummaryText: any = '') {
-  return validateResearchAgentPersonas({ ...agentLedger, agents: agentLedger.agents || [] }, geniusSummaryText)
-}
-
 export function researchNativeAgentPlan(prompt: any = '', opts: any = {}) {
   const personas = RESEARCH_AGENT_COUNCIL.map((persona: any) => ({
     id: persona.id,
@@ -120,8 +116,8 @@ export function researchNativeAgentPlan(prompt: any = '', opts: any = {}) {
     role: persona.role,
     mandate: persona.mandate,
     custom_agent: RESEARCH_REVIEWER_CUSTOM_AGENT,
-    model: 'gpt-5.6-sol',
-    reasoning_effort: 'max',
+    model: ASTRA_SUBAGENT_MODEL,
+    reasoning_effort: SUBAGENT_EFFORT,
     read_only: true
   }));
   const batches = [
@@ -131,7 +127,7 @@ export function researchNativeAgentPlan(prompt: any = '', opts: any = {}) {
       agents: personas.map((persona: any) => persona.id),
       mode: 'official_codex_subagent',
       read_only: true,
-      outputs: ['subagent-plan.json', 'subagent-events.jsonl', 'subagent-parent-summary.json', 'subagent-evidence.json', 'research-adversarial-convergence.json', RESEARCH_GENIUS_SUMMARY_ARTIFACT]
+      outputs: ['subagent-plan.json', 'subagent-events.jsonl', 'subagent-parent-summary.json', 'subagent-evidence.json', 'research-adversarial-convergence.json']
     }
   ];
   return {
@@ -155,7 +151,7 @@ export function researchNativeAgentPlan(prompt: any = '', opts: any = {}) {
     autoresearch_cycle_policy: {
       uses_agent_batches: true,
       batch_template: batches.map((batch) => ({ id: batch.id, agents: batch.agents, outputs: batch.outputs })),
-      rule: 'Every AutoResearch synthesis is challenged by three distinct composite official reviewer threads; revisions are bounded and followed by a fresh full review cycle.'
+      rule: 'Every AutoResearch synthesis is challenged by three independent review dimensions; material revisions are bounded and followed by a fresh review cycle.'
     }
   };
 }
@@ -197,7 +193,6 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
     artifacts: {
       research_paper: paperArtifact,
       legacy_research_paper: RESEARCH_PAPER_ARTIFACT,
-      genius_opinion_summary: RESEARCH_GENIUS_SUMMARY_ARTIFACT,
       research_source_skill: RESEARCH_SOURCE_SKILL_ARTIFACT,
       quality_contract: RESEARCH_QUALITY_CONTRACT_ARTIFACT,
       claim_evidence_matrix: CLAIM_EVIDENCE_MATRIX_ARTIFACT,
@@ -215,35 +210,31 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
       normal_run: 'real_super_search_semantic_synthesis_and_official_subagent_review',
       default_cycle_timeout_minutes: 20,
       default_max_cycles: 3,
-      safety_cap: 'Research performs bounded source acquisition and up to three adversarial review/revision cycles. Any unresolved objection leaves the gate blocked.',
+      safety_cap: 'Research performs bounded source acquisition and up to three adversarial review/revision cycles. Unresolved critical, major, or required revisions leave the gate blocked.',
       mock_policy: '--mock is for selftests and dry harness checks only; normal Research must block rather than silently substitute mock output.'
     },
     outcome_rubric: OUTCOME_RUBRIC,
     research_council: {
-      mode: 'persona_inspired_agents_not_impersonation',
-      policy: 'Use historical genius-inspired lenses as cognitive roles only. Do not claim to be, simulate private thoughts of, or speak as the real people.',
+      mode: 'independent_review_dimensions',
+      policy: 'Assign distinct evidence, method, and falsification review dimensions.',
       effort_policy: {
         custom_agent: RESEARCH_REVIEWER_CUSTOM_AGENT,
-        required_model: 'gpt-5.6-sol',
-        required_effort: 'max',
+        required_model: ASTRA_SUBAGENT_MODEL,
+        required_effort: SUBAGENT_EFFORT,
         applies_to: 'every_official_adversarial_reviewer',
-        rule: 'Every adversarial reviewer uses the verified research_reviewer custom agent configuration with GPT-5.6 Sol Max. Long-context and source-tool acquisition uses Terra Max; synthesis, falsification, and review use Sol Max.'
-      },
-      eureka_policy: {
-        exclamation: 'Eureka!',
-        rule: 'Every official reviewer must record one literal source-linked Eureka idea in its exact structured outcome.'
+        rule: 'Every adversarial reviewer uses the verified research_reviewer custom agent configuration with GPT-6 Astra Max. Long-context and source-tool acquisition uses Astra Medium; synthesis, falsification, and review use Astra Max.'
       },
       debate_policy: {
         mode: 'independent_adversarial_reviews_with_bounded_revision',
-        rule: 'Three distinct composite official reviewer threads independently attack the synthesized manuscript. Any objection triggers a bounded revision and a fresh full review; ambiguous lifecycle or outcomes fail closed.'
+        rule: 'Three distinct official reviewer threads independently attack the synthesized manuscript. Critical, major, or required revisions trigger a bounded revision and fresh review; minor concerns remain advisory.'
       },
       agents: RESEARCH_AGENT_COUNCIL,
       protocol: [
         'Super Search and semantic claim synthesis complete before the official reviewer threads start.',
-        'Each official composite reviewer records one source-linked "Eureka!" idea, nonempty falsifiers, and a cheap decisive probe.',
+        'Each official reviewer records source-linked evidence, nonempty falsifiers, and a cheap decisive probe.',
         'Every reviewer attempts rejection independently; no reviewer lifecycle completion is treated as approval.',
-        'Any critical, major, minor, or required revision prevents convergence and triggers a bounded revision when evidence integrity is intact.',
-        'A fresh three-thread review must approve after every successful revision.'
+        'Any critical, major, or required revision prevents convergence and triggers a bounded revision when evidence integrity is intact.',
+        'A fresh three-thread review must clear material objections after every successful revision.'
       ]
     },
     web_research_policy: {
@@ -300,14 +291,13 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
       'Do not modify code or project source files during Research. Research writes only route-local mission artifacts; implementation belongs to $Naruto or another execution route.',
       'Do not claim novelty without a novelty ledger entry.',
       'Separate facts, inferences, hypotheses, and speculations.',
-      'Run three distinct evidence-correlated official composite reviewer subagent reviews after synthesis.',
-      'Every reviewer must use the verified GPT-5.6 Sol Max research_reviewer policy, record one literal "Eureka!" idea, and return an exact structured outcome.',
+      'Run three distinct evidence-correlated official reviewer subagent reviews after synthesis.',
+      'Every reviewer must use the verified research_reviewer policy and return an exact structured outcome with source ids, falsifiers, and cheap probes.',
       'Project official reviewer outcomes into debate-ledger.json for compatibility only; the canonical proof is the lifecycle-correlated adversarial review and convergence artifacts.',
       'Maximize safe web/source search as layered source retrieval and record queries, source layers, citations, quality notes, triangulation checks, and blockers in source-ledger.json.',
       `Create ${RESEARCH_SOURCE_SKILL_ARTIFACT} as a route-local source collection skill before synthesis; do not edit generated .agents/skills during the research run.`,
       'Actively seek disconfirming evidence before synthesis.',
       `Turn the surviving research result into ${paperArtifact} with paper-style sections and references.`,
-      `End every run with ${RESEARCH_GENIUS_SUMMARY_ARTIFACT}, summarizing each genius-lens agent's final opinion, strongest evidence, disagreement, and changed mind.`,
       'Keep unsupported source-free claims as hypotheses only.',
       'Prefer the smallest testable mechanism or implementation probe, but do not stop source gathering early for speed when the research question needs a longer pass.',
       'Do not ask the user mid-run; resolve scope using the research plan and safety policy.'
@@ -316,17 +306,15 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
       { id: 'R0_FRAME', goal: 'Frame the target outcome, constraints, and what would make the idea useful.' },
       { id: 'R1_SOURCE_SKILL', goal: `Create ${RESEARCH_SOURCE_SKILL_ARTIFACT} with layer-specific search routes, quality fields, and blockers before source gathering.` },
       { id: 'R2_SOURCE_SEARCH', goal: 'Run layered web/source retrieval across papers, official data, standards, news, public discourse, developer knowledge, and counterevidence.' },
-      { id: 'R3_EUREKA', goal: 'Have each official Sol Max composite reviewer record one non-obvious source-linked Eureka idea without claiming historical-person identity or genius-level performance.' },
-      { id: 'R4_DEBATE', goal: 'Collect three independent composite adversarial reviewer outcomes, revise on any open objection, and require a fresh unanimous review before convergence.' },
+      { id: 'R3_REVIEW', goal: 'Collect source-linked evidence, falsifiers, and cheap probes from the independent review dimensions.' },
+      { id: 'R4_REVISION', goal: 'Revise on critical, major, or required findings and run a fresh bounded review cycle.' },
       { id: 'R5_FALSIFY', goal: 'Attack each mechanism with counterexamples, missing evidence, source conflicts, and failure modes.' },
       { id: 'R6_APPLY', goal: 'Keep the smallest surviving mechanism, define a cheap probe, and write all ledgers.' },
-      { id: 'R7_PAPER', goal: 'Convert the final research result into a concise paper manuscript with abstract, method, findings, limitations, and references.' },
-      { id: 'R8_GENIUS_SUMMARY', goal: `Write ${RESEARCH_GENIUS_SUMMARY_ARTIFACT} so the final answer can report every agent lens opinion and the council consensus.` }
+      { id: 'R7_PAPER', goal: 'Convert the final research result into a concise paper manuscript with abstract, method, findings, limitations, and references.' }
     ],
     required_artifacts: [
       'research-report.md',
       paperArtifact,
-      RESEARCH_GENIUS_SUMMARY_ARTIFACT,
       RESEARCH_SOURCE_SKILL_ARTIFACT,
       RESEARCH_QUALITY_CONTRACT_ARTIFACT,
       CLAIM_EVIDENCE_MATRIX_ARTIFACT,
@@ -339,8 +327,6 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
       RESEARCH_FINAL_REVIEW_ARTIFACT,
       RESEARCH_WORK_GRAPH_ARTIFACT,
       'source-ledger.json',
-      'agent-ledger.json',
-      'debate-ledger.json',
       'novelty-ledger.json',
       'falsification-ledger.json',
       'research-gate.json'
@@ -359,15 +345,6 @@ export function researchSourceSkillMarkdown(plan: any) {
 export function countResearchPaperSections(text: any = '') {
   const headings = String(text || '').toLowerCase().split(/\n/).filter((line: any) => /^#{1,3}\s+/.test(line));
   return RESEARCH_PAPER_SECTION_GROUPS.filter((group: any) => headings.some((heading: any) => group.some((term: any) => heading.includes(term)))).length;
-}
-
-export function countGeniusOpinionSummaries(text: any = '') {
-  const lower = String(text || '').toLowerCase();
-  return RESEARCH_AGENT_COUNCIL.filter((agent: any) => {
-    const label = String(agent.label || '').toLowerCase();
-    const display = String(agent.display_name || '').toLowerCase();
-    return lower.includes(String(agent.id || '').toLowerCase()) || (label && lower.includes(label)) || (display && lower.includes(display));
-  }).length;
 }
 
 export async function writeResearchPlan(dir: any, prompt: any, opts: any = {}) {
@@ -508,31 +485,24 @@ export function defaultAgentLedger(plan: any = null) {
   const agents = plan?.research_council?.agents || RESEARCH_AGENT_COUNCIL;
   return {
     schema_version: 1,
-    council_mode: plan?.research_council?.mode || 'persona_inspired_agents_not_impersonation',
+    council_mode: plan?.research_council?.mode || 'independent_review_dimensions',
     created_at: nowIso(),
     agents: agents.map((agent: any) => ({
       id: agent.id,
       agent_name: researchAgentAgentName(agent),
       display_name: agent.display_name || agent.label || agent.id,
-      historical_inspiration: agent.historical_inspiration || null,
       persona: agent.persona || agent.role,
-      persona_boundary: agent.persona_boundary || 'persona-inspired cognitive lens only; do not impersonate the historical person',
+      persona_boundary: agent.persona_boundary || 'Apply only the assigned review dimension and report evidence-bound findings.',
       role: agent.role,
       mandate: agent.mandate,
       model_policy: {
         custom_agent: RESEARCH_REVIEWER_CUSTOM_AGENT,
-        model: 'gpt-5.6-sol',
-        reasoning_effort: 'max',
+        model: ASTRA_SUBAGENT_MODEL,
+        reasoning_effort: SUBAGENT_EFFORT,
         enforcement_source: RESEARCH_REVIEWER_CONFIG_ARTIFACT
       },
       observed_model: null,
       observed_reasoning_effort: null,
-      eureka: {
-        exclamation: 'Eureka!',
-        idea: '',
-        why_it_matters: '',
-        source_ids: []
-      },
       query_set: [],
       findings: [],
       falsifiers: [],
@@ -552,16 +522,16 @@ export function defaultDebateLedger(plan: any = null) {
   return {
     schema_version: 1,
     created_at: nowIso(),
-    mode: 'vigorous_evidence_bound_debate_until_unanimous_consensus',
+    mode: 'independent_evidence_bound_reviews',
     required_participants: agents.map((agent: any) => agent.id),
     participant_display_names: agents.map((agent: any) => researchAgentAgentName(agent)),
     consensus_iterations: 0,
-    unanimous_consensus: false,
+    review_complete: false,
     agent_agreements: agents.map((agent: any) => ({
       agent_id: agent.id,
       agent_name: researchAgentAgentName(agent),
       display_name: agent.display_name || agent.label || agent.id,
-      agrees: false,
+      material_objections_resolved: false,
       final_position: '',
       source_ids: []
     })),
@@ -616,37 +586,6 @@ function sourceLayerCoverageStats(sourceLedger: any = null, requiredLayerIds: an
   return { covered: [...covered], missing, required: [...requiredLayerIds] };
 }
 
-function consensusStats(debateLedger: any = null, gate: any = {}) {
-  const required = RESEARCH_AGENT_COUNCIL.map((agent: any) => agent.id);
-  const rows = [
-    ...(Array.isArray(debateLedger?.agent_agreements) ? debateLedger.agent_agreements : []),
-    ...(Array.isArray(debateLedger?.consensus?.agent_agreements) ? debateLedger.consensus.agent_agreements : []),
-    ...(Array.isArray(debateLedger?.final_positions) ? debateLedger.final_positions : [])
-  ];
-  const agreed = new Set();
-  for (const row of rows) {
-    const id = row?.agent_id || row?.id || row?.agent;
-    if (required.includes(id) && (row.agrees === true || row.agreement === true || row.final_agreement === true)) agreed.add(id);
-  }
-  const explicitUnanimous = debateLedger?.unanimous_consensus === true
-    || debateLedger?.consensus?.unanimous_consensus === true
-    || debateLedger?.consensus?.unanimous === true
-    || gate.unanimous_consensus === true;
-  const iterations = Math.max(
-    Number(gate.consensus_iterations || 0),
-    Number(debateLedger?.consensus_iterations || 0),
-    Number(debateLedger?.consensus?.iterations || 0)
-  );
-  const unanimous = explicitUnanimous && required.every((id: any) => agreed.has(id));
-  return {
-    unanimous,
-    iterations,
-    agreed_count: agreed.size,
-    required_count: required.length,
-    missing: required.filter((id: any) => !agreed.has(id))
-  };
-}
-
 export function defaultResearchGate() {
   return {
     passed: false,
@@ -654,12 +593,8 @@ export function defaultResearchGate() {
     research_paper_artifact: null,
     paper_present: false,
     paper_sections: 0,
-    genius_opinion_summary_present: false,
-    genius_opinion_summaries: 0,
     research_source_skill_present: false,
     source_ledger_present: false,
-    agent_ledger_present: false,
-    debate_ledger_present: false,
     novelty_ledger_present: false,
     falsification_ledger_present: false,
     web_search_policy: 'layered_source_retrieval_and_triangulation',
@@ -668,15 +603,7 @@ export function defaultResearchGate() {
     source_layers_required: RESEARCH_SOURCE_LAYER_IDS.length,
     source_layers_covered: 0,
     triangulation_checks: 0,
-    independent_agents: 0,
     xhigh_agents: 0,
-    sol_max_policy_agents: 0,
-    eureka_moments: 0,
-    agent_findings: 0,
-    debate_participants: 0,
-    debate_exchanges: 0,
-    consensus_iterations: 0,
-    unanimous_consensus: false,
     counterevidence_sources: 0,
     candidate_insights: 0,
     falsification_passes: 0,
@@ -748,18 +675,17 @@ export async function validateCanonicalResearchAdversarialEvidence(dir: any) {
   if (Number(convergenceGate?.reviewer_count_observed || 0) !== expectedReviewerCount) blockers.push('canonical_adversarial_observed_reviewer_count_invalid');
   if (Number(convergenceGate?.review_cycles || 0) !== reviewCycles.length) blockers.push('canonical_adversarial_review_cycle_count_mismatch');
   if (Number(convergenceGate?.revision_cycles || 0) !== revisions.length) blockers.push('canonical_adversarial_revision_cycle_count_mismatch');
-  if (convergenceGate?.all_reviewers_approved !== true) blockers.push('canonical_adversarial_unanimity_missing');
   if (Number(convergenceGate?.unresolved_critical_objections || 0) !== 0) blockers.push('canonical_adversarial_critical_objections_open');
-  if (Number(convergenceGate?.unresolved_objections || 0) !== 0) blockers.push('canonical_adversarial_objections_open');
+  if (Number(convergenceGate?.unresolved_major_objections || 0) !== 0) blockers.push('canonical_adversarial_major_objections_open');
+  if (Number(convergenceGate?.unresolved_material_objections || 0) !== 0) blockers.push('canonical_adversarial_material_objections_open');
   if (convergenceGate?.honest_mode_ok !== true) blockers.push('canonical_adversarial_honest_mode_not_ok');
   if (normalizeResearchStrings(convergenceGate?.blockers).length) blockers.push(...normalizeResearchStrings(convergenceGate.blockers).map((blocker) => `canonical_adversarial_convergence:${blocker}`));
-  if (convergenceGate?.genius_level_guaranteed !== false || convergenceGate?.novelty_guaranteed !== false || convergenceGate?.publication_acceptance_guaranteed !== false) {
+  if (convergenceGate?.novelty_guaranteed !== false || convergenceGate?.publication_acceptance_guaranteed !== false) {
     blockers.push('canonical_adversarial_guarantee_overclaim');
   }
   if (honestMode?.ok !== true || normalizeResearchStrings(honestMode?.blockers).length) blockers.push('canonical_research_honest_mode_not_ok');
   if (String(honestMode?.execution_class || '') !== executionClass) blockers.push('canonical_research_honest_mode_execution_class_mismatch');
-  if (honestMode?.guarantees?.genius_level !== false
-    || honestMode?.guarantees?.novelty !== false
+  if (honestMode?.guarantees?.novelty !== false
     || honestMode?.guarantees?.breakthrough !== false
     || honestMode?.guarantees?.publication_acceptance !== false) {
     blockers.push('canonical_research_honest_mode_guarantee_overclaim');
@@ -874,31 +800,30 @@ function canonicalResearchReviewerBlockers(reviewer: any, currentSourceIds: Set<
   if (reviewer?.schema !== 'sks.research-adversarial-reviewer-outcome.v1') blockers.push(`canonical_adversarial_reviewer_schema:${personaId}`);
   if (!String(reviewer?.thread_id || '').trim()) blockers.push(`canonical_adversarial_reviewer_thread_missing:${personaId}`);
   if (reviewer?.thread_status !== 'completed') blockers.push(`canonical_adversarial_reviewer_thread_not_completed:${personaId}`);
-  if (reviewer?.verdict !== 'approve') blockers.push(`canonical_adversarial_reviewer_not_approved:${personaId}`);
+  if (!['approve', 'revise', 'reject'].includes(reviewer?.verdict)) blockers.push(`canonical_adversarial_reviewer_verdict_invalid:${personaId}`);
   if (!String(reviewer?.strongest_challenge || '').trim()) blockers.push(`canonical_adversarial_reviewer_challenge_missing:${personaId}`);
   if (!normalizeResearchStrings(reviewer?.evidence_source_ids).length) blockers.push(`canonical_adversarial_reviewer_evidence_missing:${personaId}`);
   if (!normalizeResearchStrings(reviewer?.falsifiers).length) blockers.push(`canonical_adversarial_reviewer_falsifier_missing:${personaId}`);
   if (!normalizeResearchStrings(reviewer?.cheap_probes).length) blockers.push(`canonical_adversarial_reviewer_probe_missing:${personaId}`);
   if (!/^[a-f0-9]{64}$/i.test(String(reviewer?.review_artifact_bundle_sha256 || ''))) blockers.push(`canonical_adversarial_reviewer_artifact_bundle_missing:${personaId}`);
   if (expectedArtifactBundle && String(reviewer?.review_artifact_bundle_sha256 || '') !== expectedArtifactBundle) blockers.push(`canonical_adversarial_reviewer_artifact_bundle_mismatch:${personaId}`);
-  if (reviewer?.eureka?.exclamation !== 'Eureka!' || !String(reviewer?.eureka?.idea || '').trim() || !normalizeResearchStrings(reviewer?.eureka?.source_ids).length) blockers.push(`canonical_adversarial_reviewer_eureka_missing:${personaId}`);
   for (const sourceId of normalizeResearchStrings(reviewer?.evidence_source_ids)) {
     if (!currentSourceIds.has(sourceId)) blockers.push(`canonical_adversarial_reviewer_source_unknown:${personaId}:${sourceId}`);
   }
-  for (const sourceId of normalizeResearchStrings(reviewer?.eureka?.source_ids)) {
-    if (!currentSourceIds.has(sourceId)) blockers.push(`canonical_adversarial_reviewer_eureka_source_unknown:${personaId}:${sourceId}`);
-  }
-  const objections = [
-    ...(Array.isArray(reviewer?.critical_objections) ? reviewer.critical_objections : []),
-    ...(Array.isArray(reviewer?.major_objections) ? reviewer.major_objections : []),
-    ...(Array.isArray(reviewer?.minor_objections) ? reviewer.minor_objections : [])
-  ];
+  const criticalObjections = Array.isArray(reviewer?.critical_objections) ? reviewer.critical_objections : [];
+  const majorObjections = Array.isArray(reviewer?.major_objections) ? reviewer.major_objections : [];
+  const minorObjections = Array.isArray(reviewer?.minor_objections) ? reviewer.minor_objections : [];
+  const objections = [...criticalObjections, ...majorObjections, ...minorObjections];
   for (const objection of objections) {
     for (const sourceId of normalizeResearchStrings(objection?.source_ids)) {
       if (!currentSourceIds.has(sourceId)) blockers.push(`canonical_adversarial_reviewer_objection_source_unknown:${personaId}:${sourceId}`);
     }
   }
-  if (objections.length || normalizeResearchStrings(reviewer?.required_revisions).length) blockers.push(`canonical_adversarial_reviewer_objections_open:${personaId}`);
+  const materialObjections = [...criticalObjections, ...majorObjections];
+  const requiredRevisions = normalizeResearchStrings(reviewer?.required_revisions);
+  if (materialObjections.length || requiredRevisions.length) blockers.push(`canonical_adversarial_reviewer_material_objections_open:${personaId}`);
+  if (reviewer?.verdict === 'approve' && (materialObjections.length || requiredRevisions.length)) blockers.push(`canonical_adversarial_reviewer_approve_with_revision:${personaId}`);
+  if (reviewer?.verdict !== 'approve' && !materialObjections.length && !requiredRevisions.length) blockers.push(`canonical_adversarial_reviewer_nonapproval_without_material_objection:${personaId}`);
   return blockers;
 }
 
@@ -952,17 +877,11 @@ export async function evaluateResearchGate(dir: any) {
   const paperPresent = paperArtifact.exists;
   const paperText = paperPresent ? await readText(paperArtifact.path, '') : '';
   const paperSections = paperPresent ? countResearchPaperSections(paperText) : 0;
-  const geniusSummaryPresent = await exists(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT));
-  const geniusSummaryCount = geniusSummaryPresent ? countGeniusOpinionSummaries(await readText(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT), '')) : 0;
   const sourceSkillPresent = await exists(path.join(dir, RESEARCH_SOURCE_SKILL_ARTIFACT));
   const sourcePresent = await exists(path.join(dir, 'source-ledger.json'));
-  const agentPresent = await exists(path.join(dir, 'agent-ledger.json'));
-  const debatePresent = await exists(path.join(dir, 'debate-ledger.json'));
   const ledgerPresent = await exists(path.join(dir, 'novelty-ledger.json'));
   const falsificationPresent = await exists(path.join(dir, 'falsification-ledger.json'));
   const sourceLedger = await readJson(path.join(dir, 'source-ledger.json'), null);
-  const agentLedger = await readJson(path.join(dir, 'agent-ledger.json'), null);
-  const debateLedger = await readJson(path.join(dir, 'debate-ledger.json'), null);
   const falsificationLedger = await readJson(path.join(dir, 'falsification-ledger.json'), null);
   const noveltyLedger = await readJson(path.join(dir, 'novelty-ledger.json'), null);
   const claimMatrixSummary = await readClaimEvidenceMatrix(dir);
@@ -978,8 +897,6 @@ export async function evaluateResearchGate(dir: any) {
   const canonicalAdversarial = await validateCanonicalResearchAdversarialEvidence(dir);
   let sourceQualityReport = await readSourceQualityReport(dir);
   if (!sourceQualityReport && sourceLedger) sourceQualityReport = await writeSourceQualityReport(dir, sourceLedger, claimMatrix);
-  const geniusSummaryText = geniusSummaryPresent ? await readText(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT), '') : '';
-  const personaValidation = validateResearchAgentLedger(agentLedger || {}, geniusSummaryText);
   const sourceEntries = Array.isArray(sourceLedger?.sources) ? sourceLedger.sources.length : 0;
   const counterEvidenceEntries = Array.isArray(sourceLedger?.counterevidence_sources) ? sourceLedger.counterevidence_sources.length : 0;
   const totalSourceEntries = sourceEntries + counterEvidenceEntries;
@@ -987,20 +904,6 @@ export async function evaluateResearchGate(dir: any) {
   const requiredSourceLayers = sourceLayerIdsForPlan(plan);
   const sourceLayerStats = sourceLayerCoverageStats(sourceLedger, requiredSourceLayers);
   const triangulationChecks = Array.isArray(sourceLedger?.triangulation?.cross_layer_checks) ? sourceLedger.triangulation.cross_layer_checks.length : 0;
-  const agentRows = Array.isArray(agentLedger?.agents) ? agentLedger.agents : [];
-  const independentAgents = agentRows.filter((agent: any) => Array.isArray(agent.findings) && agent.findings.length > 0).length;
-  const solMaxPolicyAgents = agentRows.filter((agent: any) => {
-    const policy = agent?.model_policy && typeof agent.model_policy === 'object' ? agent.model_policy : agent;
-    return policy.custom_agent === RESEARCH_REVIEWER_CUSTOM_AGENT
-      && policy.model === 'gpt-5.6-sol'
-      && (policy.reasoning_effort === 'max' || policy.model_reasoning_effort === 'max');
-  }).length;
-  const eurekaMoments = agentRows.filter((agent: any) => agent.eureka?.exclamation === 'Eureka!' && String(agent.eureka?.idea || '').trim()).length;
-  const agentFindings = agentRows.reduce((sum: any, agent: any) => sum + (Array.isArray(agent.findings) ? agent.findings.length : 0), 0);
-  const debateRows = Array.isArray(debateLedger?.exchanges) ? debateLedger.exchanges : [];
-  const debateParticipants = new Set(debateRows.flatMap((exchange: any) => [exchange?.from, exchange?.to, ...(Array.isArray(exchange?.participants) ? exchange.participants : [])].filter(Boolean))).size;
-  const debateExchanges = debateRows.length;
-  const consensus = consensusStats(debateLedger, gate);
   const falsificationCases = Array.isArray(falsificationLedger?.cases) ? falsificationLedger.cases.length : 0;
   const searchBlockers = [
     ...(Array.isArray(gate.web_search_blockers) ? gate.web_search_blockers : []),
@@ -1014,12 +917,8 @@ export async function evaluateResearchGate(dir: any) {
   if (!reportQuality.ok) reasons.push(...reportQuality.blockers);
   if (!paperPresent) reasons.push('research_paper_missing');
   if (paperSections < RESEARCH_PAPER_SECTION_GROUPS.length) reasons.push('research_paper_sections_missing');
-  if (!geniusSummaryPresent && gate.genius_opinion_summary_present !== true) reasons.push('genius_opinion_summary_missing');
-  if (Math.max(Number(gate.genius_opinion_summaries || 0), geniusSummaryCount) < RESEARCH_AGENT_COUNCIL.length) reasons.push('genius_opinion_summary_incomplete');
   if (!sourceSkillPresent && gate.research_source_skill_present !== true) reasons.push('research_source_skill_missing');
   if (!sourcePresent && gate.source_ledger_present !== true) reasons.push('source_ledger_missing');
-  if (!agentPresent && gate.agent_ledger_present !== true) reasons.push('agent_ledger_missing');
-  if (!debatePresent && gate.debate_ledger_present !== true) reasons.push('debate_ledger_missing');
   if (!ledgerPresent && gate.novelty_ledger_present !== true) reasons.push('novelty_ledger_missing');
   if (!falsificationPresent && gate.falsification_ledger_present !== true) reasons.push('falsification_ledger_missing');
   if (webSearchPasses < 1) reasons.push('web_search_pass_missing');
@@ -1028,15 +927,6 @@ export async function evaluateResearchGate(dir: any) {
   if (Math.max(Number(gate.source_layers_covered || 0), sourceLayerStats.covered.length) < requiredSourceLayers.length) reasons.push('source_layer_coverage_missing');
   if (Math.max(Number(gate.source_layers_covered || 0), sourceLayerStats.covered.length) < contract.min_source_layers_covered) reasons.push('source_layer_coverage_below_contract');
   if (Math.max(Number(gate.triangulation_checks || 0), triangulationChecks) < 1) reasons.push('cross_layer_triangulation_missing');
-  if (Math.max(Number(gate.independent_agents || 0), independentAgents) < RESEARCH_AGENT_COUNCIL.length) reasons.push('independent_agents_missing');
-  if (Math.max(Number(gate.sol_max_policy_agents || 0), solMaxPolicyAgents) < RESEARCH_AGENT_COUNCIL.length) reasons.push('agent_model_policy_not_sol_max');
-  if (Math.max(Number(gate.eureka_moments || 0), eurekaMoments) < RESEARCH_AGENT_COUNCIL.length) reasons.push('eureka_missing');
-  if (!personaValidation.ok) reasons.push(...personaValidation.issues.map((issue: any) => `agent_persona:${issue}`));
-  if (Math.max(Number(gate.agent_findings || 0), agentFindings) < RESEARCH_AGENT_COUNCIL.length) reasons.push('agent_findings_missing');
-  if (Math.max(Number(gate.debate_participants || 0), debateParticipants) < RESEARCH_AGENT_COUNCIL.length) reasons.push('debate_participants_missing');
-  if (Math.max(Number(gate.debate_exchanges || 0), debateExchanges) < RESEARCH_AGENT_COUNCIL.length) reasons.push('debate_exchanges_missing');
-  if (Math.max(Number(gate.consensus_iterations || 0), consensus.iterations) < 1) reasons.push('consensus_iteration_missing');
-  if (!consensus.unanimous) reasons.push('unanimous_consensus_missing');
   if (Math.max(Number(gate.counterevidence_sources || 0), counterEvidenceEntries) < 1) reasons.push('counterevidence_source_missing');
   if (Math.max(Number(gate.counterevidence_sources || 0), counterEvidenceEntries) < contract.min_counterevidence_sources) reasons.push('counterevidence_below_contract');
   if ((gate.candidate_insights || 0) < 1) reasons.push('candidate_insight_missing');
@@ -1104,8 +994,6 @@ export async function evaluateResearchGate(dir: any) {
       },
       web_search_passes: webSearchPasses,
       paper_sections: Math.max(Number(gate.paper_sections || 0), paperSections),
-      genius_opinion_summary_present: geniusSummaryPresent || gate.genius_opinion_summary_present === true,
-      genius_opinion_summaries: Math.max(Number(gate.genius_opinion_summaries || 0), geniusSummaryCount),
       research_source_skill_present: sourceSkillPresent || gate.research_source_skill_present === true,
       source_entries: Math.max(Number(gate.source_entries || 0), sourceEntries),
       source_entries_total_with_counterevidence: totalSourceEntries,
@@ -1123,19 +1011,7 @@ export async function evaluateResearchGate(dir: any) {
       claim_evidence_matrix_ok: claimMatrixValidation.ok,
       claim_evidence_matrix_blockers: claimMatrixValidation.blockers,
       source_quality_report_ok: sourceQualityReport?.ok === true,
-      independent_agents: Math.max(Number(gate.independent_agents || 0), independentAgents),
       xhigh_agents: 0,
-      sol_max_policy_agents: Math.max(Number(gate.sol_max_policy_agents || 0), solMaxPolicyAgents),
-      eureka_moments: Math.max(Number(gate.eureka_moments || 0), eurekaMoments),
-      agent_persona_contract_ok: personaValidation.ok,
-      agent_persona_issues: personaValidation.issues,
-      agent_findings: Math.max(Number(gate.agent_findings || 0), agentFindings),
-      debate_participants: Math.max(Number(gate.debate_participants || 0), debateParticipants),
-      debate_exchanges: Math.max(Number(gate.debate_exchanges || 0), debateExchanges),
-      consensus_iterations: Math.max(Number(gate.consensus_iterations || 0), consensus.iterations),
-      unanimous_consensus: consensus.unanimous,
-      consensus_agreed_agents: consensus.agreed_count,
-      consensus_missing_agents: consensus.missing,
       counterevidence_sources: Math.max(Number(gate.counterevidence_sources || 0), counterEvidenceEntries),
       min_counterevidence_sources: contract.min_counterevidence_sources,
       falsification_cases: Math.max(Number(gate.falsification_cases || 0), falsificationCases),

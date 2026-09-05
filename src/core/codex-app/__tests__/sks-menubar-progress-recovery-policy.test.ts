@@ -184,7 +184,7 @@ precondition(authFinal?.recovery?.automaticResume == false)
   assert.equal(executed.code, 0, executed.output)
 })
 
-test('SKS Center exposes progress signal, cause, attempts, and explicit resume path', async () => {
+test('SKS Center shows relevant recovery and an explicit review path', async () => {
   const sourceRoot = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources')
   const [models, coordinatorSource, overview] = await Promise.all([
     fs.readFile(path.join(sourceRoot, 'OperationModels.swift'), 'utf8'),
@@ -202,10 +202,9 @@ test('SKS Center exposes progress signal, cause, attempts, and explicit resume p
   assert.match(coordinator, /evidenceIntegrity: "preserved"/)
   assert.doesNotMatch(coordinator, /apiKey|requestBody|accountIdentifier/)
   assert.match(overview, /Progress, pause & recovery/)
-  assert.match(overview, /Time budgets are warnings, never automatic termination/)
-  assert.ok(overview.includes('progress \\(recovery.lastProgressSignal.rawValue)'))
-  assert.ok(overview.includes('auto resume \\(automatic)'))
-  assert.ok(overview.includes('retry \\(recovery.retryCount)/'))
+  assert.match(overview, /recoveryCard\.isHidden = !active && !needsReview/)
+  assert.match(overview, /recovery\.state == \.pausedResumable \|\| recovery\.state == \.warning/)
+  assert.ok(overview.includes('\\(operation.publicSummary)\\n\\(recovery.nextAction)'))
   assert.match(overview, /Review & Resume…/)
   assert.match(overview, /Nothing resumed automatically/)
 })

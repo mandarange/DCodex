@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { readJson } from '../fsx.js';
+import { hasExplicitSksManagedCodexConfigMarker } from '../codex/codex-config-guard.js';
 import {
   inspectConfinedPath,
   publicPathError,
@@ -15,7 +16,7 @@ export const LEGACY_RUNTIME_DATA_GC_SCHEMA = 'sks.legacy-runtime-data-gc.v1' as 
  * the live file name (`config.toml.backup-<ts>`, `config.toml.bak[-tag]`,
  * `config.toml.<cause>.bak`, `config.toml.pre-session-restore-<ts>.bak`), so
  * the pattern is anchored to `config.toml.` plus a known backup shape and can
- * never match the live config or an unrelated user file.
+ * never match the live config. Content ownership is checked separately.
  */
 const CONFIG_BACKUP_NAME = /^config\.toml\.(?:backup-[A-Za-z0-9_.:-]+|bak(?:[-.][A-Za-z0-9_.-]+)?|[A-Za-z0-9_.-]+\.bak)$/;
 const BRIDGE_GENERATION_DIR = /^[0-9a-f]{64}\.[0-9a-f]{64}\.[0-9a-f]{64}$/;
@@ -57,7 +58,8 @@ export interface LegacyRuntimeDataGcReport {
  * that are neither active nor the newest inactive one, retired version-pinned
  * capability caches, and the v1 chrome native-hosts record once the v2 record
  * exists. Deletion authority stays narrow: exact SKS name shapes, regular
- * files (or generation directories) owned by the current uid, confined to the
+ * files (or generation directories) owned by the current uid, config backups
+ * with an explicit SKS managed marker, confined to the
  * codex home / state roots they live under, and the bridge category only acts
  * when the active-generation pointer proves which bundle is live.
  */
@@ -100,6 +102,10 @@ async function reconcileConfigBackups(codexHome: string, fix: boolean): Promise<
     if (!CONFIG_BACKUP_NAME.test(name)) continue;
     const inspected = await inspectOwnedRegularFile(codexHome, path.join(codexHome, name), report);
     if (!inspected) continue;
+    // Backup names are also used by users and other tools. UID and filename
+    // prove location, not SKS authorship; preserve unmarked restore points.
+    const content = await fsp.readFile(inspected.path, 'utf8').catch(() => '');
+    if (!hasExplicitSksManagedCodexConfigMarker(content)) continue;
     report.detected += 1;
     candidates.push({ file: inspected.path, mtimeMs: inspected.stat?.mtimeMs || 0 });
   }

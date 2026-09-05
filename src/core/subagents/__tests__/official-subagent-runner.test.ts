@@ -5,7 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import fsp from 'node:fs/promises'
 import {
-  runOfficialSubagentWorkflow
+  runOfficialSubagentWorkflow,
+  defaultNarutoCredentialPolicy
 } from '../official-subagent-runner.js'
 import { readOfficialSubagentConfig } from '../official-subagent-config.js'
 import { HARD_NARUTO_MAX_THREADS } from '../thread-budget.js'
@@ -181,7 +182,7 @@ test('app sessions return delegation context without launching nested Codex', as
   assert.equal(result.ok, false)
   assert.equal(result.prepared, true)
   assert.equal(result.completion_evidence, false)
-  assert.equal(result.parent_model, 'gpt-5.6-sol')
+  assert.equal(result.parent_model, 'gpt-6-astra')
   assert.equal(result.parent_reasoning_effort, 'max')
 })
 
@@ -2152,4 +2153,15 @@ test('standalone official subagent blocks retired direct provider selection befo
   } finally {
     await fsp.rm(root, { recursive: true, force: true })
   }
+})
+
+
+test('workflow metadata preserves an explicit parent model and effort', async () => {
+  const result = await runOfficialSubagentWorkflow({
+    root: process.cwd(), goal: 'delegate and wait', prompt: 'delegate and wait',
+    requestedSubagents: 1, maxThreads: 1, appSession: true,
+    credentialPolicy: { ...defaultNarutoCredentialPolicy(), parentModel: 'gpt-5.6-sol', parentEffort: 'high' }
+  })
+  assert.equal(result.parent_model, 'gpt-5.6-sol')
+  assert.equal(result.parent_reasoning_effort, 'high')
 })

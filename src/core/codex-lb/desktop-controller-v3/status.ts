@@ -13,7 +13,7 @@ import type {
   DesktopBridgeStatusV3
 } from '../bridge-contracts.js';
 import { readActiveCombinedBridgeCatalog } from '../combined-catalog.js';
-import { desktopBridgeServiceStatus, type DesktopBridgeServiceStatus } from '../desktop-service.js';
+import { desktopBridgeServiceStatus, desktopBridgeServicePaths, readDesktopBridgeServiceSettings, type DesktopBridgeServiceStatus } from '../desktop-service.js';
 import { captureCodexAuthSnapshot } from '../desktop-auth-invariant.js';
 import { readText } from '../../fsx.js';
 import { resolveBridgeProviderRegistry, type BridgeProviderRegistry } from '../provider-registry.js';
@@ -78,7 +78,8 @@ export async function loadCore(options: DesktopBridgeControllerV3Options): Promi
     service.state?.process_generation || null,
     service.state?.last_verified_probe_ids || []
   );
-  return { paths, checkedAt, config, credentials, registry, activeCatalog, policy, policyBlockers, service, auth, catalogSync, diagnostic };
+  const settings = await readDesktopBridgeServiceSettings(options.settingsPath || desktopBridgeServicePaths(paths.home).settings_path).catch(() => null);
+  return { authPriorityEnabled: settings?.auth_priority_enabled === true, paths, checkedAt, config, credentials, registry, activeCatalog, policy, policyBlockers, service, auth, catalogSync, diagnostic };
 }
 
 /**
@@ -166,6 +167,7 @@ export function statusFromCore(
     : [];
   return {
     schema: 'sks.desktop-bridge-status.v3',
+    auth_priority: authPriorityStatusFromCore(core),
     checked_at: core.checkedAt,
     correlation_id: makeId('status', options),
     management,
@@ -340,4 +342,16 @@ function isManagedConfig(config: string): boolean {
     DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER
   ].every((marker) => top.split(/\r?\n/).some((line) => line.trim() === marker))
     && /^\s*model_provider\s*=\s*"openai"\s*(?:#.*)?$/m.test(top);
+}
+
+export function authPriorityStatusFromCore(core: ControllerCore): import('../bridge-contracts.js').BridgeAuthPriorityStatus {
+  if (!core.authPriorityEnabled) return { enabled: false, state: 'off', error: null };
+  const profile = core.registry.profiles['codex-lb'];
+  const error = !profile.enabled ? 'codex_lb_provider_disabled'
+    : profile.state === 'not_configured' ? 'codex_lb_credential_missing'
+    : profile.state !== 'ready' ? 'codex_lb_route_not_ready'
+    : !core.activeCatalog.ok || core.activeCatalog.route_index.providers['codex-lb'].state !== 'ready' || !core.policy || !Object.entries(core.policy.model_routes).some(([model, route]) =>
+      /^(?:gpt-[0-9]|o[0-9]|codex-mini)/.test(model) && !model.includes(':') && route.provider_id === 'codex-lb')
+      ? 'codex_lb_eligible_route_missing' : null;
+  return { enabled: true, state: error ? 'unavailable' : 'active', error };
 }

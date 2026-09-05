@@ -111,6 +111,39 @@ this release ships through a pipeline that has already proven itself.
 
 ## Migrating
 
+### Astra and runtime cleanup
+
+Standalone Naruto launches now default to `gpt-6-astra` at the existing `max`
+effort. Active Codex tasks keep their selected model, effort, and service tier;
+managed child roles use GPT-6 Astra High for implementation, Astra Max for
+judgment, and Astra Medium for context and tool work. Tiny mechanical workers
+retain GPT-5.6 Luna Max.
+Model capabilities come from the configured Codex catalog or official
+`model/list`, with unavailable metadata reported explicitly. The changes follow
+[OpenAI's Astra guidance](https://developers.openai.com/api/docs/guides/latest-model)
+on instruction conflicts, autonomy, and proportionate verification.
+
+General work stays with the parent unless independent slices justify delegation.
+Generated support skills no longer repeat route activation and full context
+policy. PreToolUse validates current skill files without repeating the same
+path block. Lightweight plans are actually persisted, pipeline status reads the
+calling session, and maintenance Align preserves its active mission.
+Align, Wiki validation, and hook preflight share one extractor identity.
+Generated packs and maps are excluded from their own source fingerprints;
+real source changes still invalidate the index.
+
+Removed the unused V1 dynamic release/cache path, detached scheduler and ledger
+helpers, the flagship report-presence proof chain, and synthetic parallel-smoke
+marketing evidence. The active V2 release DAG, real agent/worktree execution,
+source-backed memory, and safety checks remain. Prescribed release prose and the audit's
+1,200-line threshold no longer block checks. Research uses evidence, method, and falsification
+reviews; it no longer requires `Eureka!`, historical personas, a genius summary,
+or resolution of every minor comment. Material findings, source integrity,
+artifact hashes, and bounded review deadlines remain enforced.
+
+These are runtime and instruction changes, not a claim of measured model quality
+or token-cost improvement. Updating an installed copy remains a separate action.
+
 Nothing to do. `sks update` converges the managed hooks and `AGENTS.md`
 block. To keep the legacy behavior: `sks` reads
 `~/.sneakoscope-global/verification-profile.json` — write

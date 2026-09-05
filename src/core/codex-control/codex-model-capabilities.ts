@@ -1,6 +1,10 @@
 import path from 'node:path'
 import { writeJsonAtomic } from '../fsx.js'
-import { collectCodexModelMetadata, type CodexModelMetadata } from './codex-model-metadata.js'
+import {
+  collectCodexModelMetadata,
+  normalizeAdvertisedEfforts,
+  type CodexModelMetadata
+} from './codex-model-metadata.js'
 
 export interface CodexModelEffortCapability {
   model: string
@@ -11,17 +15,17 @@ export interface CodexModelEffortCapability {
   metadata_blockers?: string[]
 }
 
-export const SKS_FALLBACK_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh']
+export const SKS_FALLBACK_EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh']
 
 export function codexModelEffortCapability(input: { model?: string | null; advertisedEfforts?: string[] | null; defaultEffort?: string | null; metadata?: CodexModelMetadata | null } = {}): CodexModelEffortCapability {
-  const metadataIsFallback = input.metadata?.source === 'fallback'
-  const advertised = metadataIsFallback ? [] : normalizeAdvertisedEfforts(input.metadata?.advertised_efforts || input.advertisedEfforts)
+  const advertised = normalizeAdvertisedEfforts(input.metadata?.advertised_efforts || input.advertisedEfforts)
   const order = advertised.length ? advertised : SKS_FALLBACK_EFFORT_ORDER
   const requestedDefault = input.metadata?.default_effort || input.defaultEffort
-  const defaultEffort = order.includes(String(requestedDefault || '')) ? String(requestedDefault) : order.includes('medium') ? 'medium' : order[0] || 'medium'
+  const defaultEffort = effortSupportedByOrder(String(requestedDefault || ''), order)
+    || (order.includes('medium') ? 'medium' : order[0] || 'medium')
   return {
     model: String(input.metadata?.model || input.model || process.env.SKS_CODEX_MODEL || process.env.CODEX_MODEL || ''),
-    advertised_efforts: order,
+    advertised_efforts: advertised,
     default_effort: defaultEffort,
     order_source: advertised.length ? 'model-advertised' : 'sks-fallback',
     metadata_source: input.metadata?.source || null,
@@ -45,29 +49,25 @@ export async function writeCodexModelEffortCapabilityArtifact(root: string, inpu
   return { capability, artifact }
 }
 
-export function normalizeAdvertisedEfforts(value: any): string[] {
-  const rows = Array.isArray(value) ? value : String(value || '').split(',')
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const row of rows) {
-    const effort = String(row || '').trim().toLowerCase()
-    if (!effort || seen.has(effort)) continue
-    seen.add(effort)
-    out.push(effort)
-  }
-  return out
-}
-
 export function nextAdvertisedEffort(current: string, capability: CodexModelEffortCapability = codexModelEffortCapability()) {
   const order = capability.advertised_efforts.length ? capability.advertised_efforts : SKS_FALLBACK_EFFORT_ORDER
-  const index = Math.max(0, order.indexOf(current))
+  const supportedCurrent = effortSupportedByOrder(current, order)
+  if (!supportedCurrent) return capability.default_effort
+  if (supportedCurrent !== current) return supportedCurrent
+  const index = order.indexOf(supportedCurrent)
   return order[Math.min(order.length - 1, index + 1)] || current || capability.default_effort
 }
 
 export function modelEffortAtLeast(target: string, capability: CodexModelEffortCapability = codexModelEffortCapability()) {
   const order = capability.advertised_efforts.length ? capability.advertised_efforts : SKS_FALLBACK_EFFORT_ORDER
-  if (order.includes(target)) return target
+  const supportedTarget = effortSupportedByOrder(target, order)
+  if (supportedTarget) return supportedTarget
   if (target === 'recovery') return order.includes('high') ? 'high' : order[order.length - 1]
   if (target === 'forensic_vision') return order.includes('xhigh') ? 'xhigh' : order[order.length - 1]
   return capability.default_effort
+}
+
+function effortSupportedByOrder(effort: string, order: string[]): string | null {
+  if (order.includes(effort)) return effort
+  return (effort === 'none' || effort === 'minimal') && order.includes('low') ? 'low' : null
 }

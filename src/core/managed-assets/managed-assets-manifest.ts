@@ -106,14 +106,14 @@ Do not claim success without direct evidence.`
     filename: 'implementation-specialist.toml',
     aliases: ['implementation-specialist', 'core-implementer'],
     codexName: 'implementation_specialist',
-    description: 'Sol High implementation specialist for ordinary backend, core, API, lifecycle, and cross-file coding with disjoint ownership.',
+    description: 'Astra High implementation specialist for ordinary backend, core, API, lifecycle, and cross-file coding with disjoint ownership.',
     policy: 'sol_high_implementation',
     keywords: ['implementation', 'backend', 'core', 'api', 'lifecycle implementation', 'cross-file coding', 'feature change', '구현', '백엔드', '핵심 로직'],
     nicknames: ['Builder', 'Forge', 'Mason', 'Rivet'],
     instructions: `You are the bounded complex implementation specialist.
 
 Own only the disjoint files and acceptance criteria assigned by the parent.
-Use this role for ordinary non-mechanical backend, core, API, lifecycle, and cross-file implementation. Escalate review, debugging, planning, architecture, security, release, and ambiguous work to a Sol Max specialist.
+Use this role for ordinary non-mechanical backend, core, API, lifecycle, and cross-file implementation. Escalate review, debugging, planning, architecture, security, release, and ambiguous work to a Astra Max specialist.
 Do not redesign unrelated architecture or integrate sibling work.
 Make the smallest defensible change, run focused verification, and return files, evidence, and residual risks.`
   }),
@@ -145,7 +145,7 @@ Return a concise result, evidence, risks, and next action.`
     filename: 'explorer.toml',
     aliases: ['explorer', 'code-explorer'],
     codexName: 'explorer',
-    description: 'Terra Max read-only codebase explorer for read-heavy scans, entry points, ownership, dependencies, and distilled evidence.',
+    description: 'Astra Medium read-only codebase explorer for read-heavy scans, entry points, ownership, dependencies, and distilled evidence.',
     policy: 'terra_max_context_tools',
     sandbox: 'read-only',
     keywords: ['explore', 'map', 'trace', 'inventory', 'locate', 'search', 'read-only', 'large search', 'repository-wide search', '대규모 검색'],
@@ -163,7 +163,7 @@ Return concise findings with exact paths and symbols.`
     filename: 'long-context-analyst.toml',
     aliases: ['long-context-analyst', 'large-context-analyst', 'document-analyst'],
     codexName: 'long_context_analyst',
-    description: 'Terra Max read-only analyst for large files, long logs, multi-document context, and distilled evidence handoffs.',
+    description: 'Astra Medium read-only analyst for large files, long logs, multi-document context, and distilled evidence handoffs.',
     policy: 'terra_max_context_tools',
     sandbox: 'read-only',
     keywords: ['long context', 'large file', 'large codebase', 'multi-document', 'supporting documents', 'extensive logs', 'context compression'],
@@ -171,7 +171,7 @@ Return concise findings with exact paths and symbols.`
     instructions: `You are the long-context evidence analyst.
 
 Read large files, long logs, or multiple supporting documents without turning raw context into unsupported conclusions.
-Return a compact, source-addressable summary to the parent and identify which claims still require Sol Max judgment.
+Return a compact, source-addressable summary to the parent and identify which claims still require Astra Max judgment.
 Use bounded TriWiki anchors first, hydrate only relevant sources, and do not edit files or spawn another subagent.`
   }),
   officialSubagentRole({
@@ -212,7 +212,7 @@ Run only the focused checks needed for the slice and report exact commands and o
     filename: 'ui-implementer.toml',
     aliases: ['ui-implementer', 'frontend-specialist'],
     codexName: 'ui_implementer',
-    description: 'Sol High UI and terminal-interface implementation specialist for visual behavior, interaction, accessibility, and rendered state.',
+    description: 'Astra High UI and terminal-interface implementation specialist for visual behavior, interaction, accessibility, and rendered state.',
     policy: 'sol_high_implementation',
     keywords: ['ui', 'ux', 'frontend', 'visual', 'terminal', 'accessibility'],
     nicknames: ['Canvas', 'Iris', 'Pixel', 'Turing'],
@@ -228,7 +228,7 @@ Verify the rendered result with the appropriate live or deterministic surface an
     filename: 'native-app-specialist.toml',
     aliases: ['native-app-specialist', 'macos-specialist', 'desktop-specialist'],
     codexName: 'native_app_specialist',
-    description: 'Sol High native desktop coding specialist for macOS AppKit and Swift menu-bar UI, app lifecycle, accessibility, and OS integration.',
+    description: 'Astra High native desktop coding specialist for macOS AppKit and Swift menu-bar UI, app lifecycle, accessibility, and OS integration.',
     policy: 'sol_high_implementation',
     keywords: ['native app', 'macos', 'appkit', 'swift', 'menu bar', 'nsstatusitem', 'nsworkspace', 'tcc', 'desktop app'],
     nicknames: ['Cocoa', 'Darwin', 'Quartz', 'Swift'],
@@ -244,7 +244,7 @@ Verify with the narrowest compile, deterministic template, or live native check 
     filename: 'computer-use-operator.toml',
     aliases: ['computer-use-operator', 'desktop-operator'],
     codexName: 'computer_use_operator',
-    description: 'Terra Max Computer Use operator for scoped native macOS, desktop-app, and OS-settings interaction or evidence capture.',
+    description: 'Astra Medium Computer Use operator for scoped native macOS, desktop-app, and OS-settings interaction or evidence capture.',
     policy: 'terra_max_context_tools',
     sandbox: 'read-only',
     keywords: ['computer use', 'desktop interaction', 'macos inspection', 'system settings', 'native app inspection', 'visual evidence'],
@@ -253,7 +253,7 @@ Verify with the narrowest compile, deterministic template, or live native check 
 
 Use Codex Computer Use only for the explicit native macOS, desktop-app, OS-settings, or non-web visual slice assigned by the parent.
 Do not target the hosting Codex Desktop app (com.openai.codex). For Codex-linked checks, observe Codex through structured host/process evidence and operate only the external native target.
-Do not replace judgment, debugging, planning, or security review; return captured evidence to the appropriate Sol Max specialist.
+Do not replace judgment, debugging, planning, or security review; return captured evidence to the appropriate Astra Max specialist.
 Honor the parent permission scope, avoid destructive or irreversible UI actions, do not edit source files, and report exactly what was observed or changed.`
   }),
   officialSubagentRole({
@@ -261,7 +261,7 @@ Honor the parent permission scope, avoid destructive or irreversible UI actions,
     filename: 'browser-use-operator.toml',
     aliases: ['browser-use-operator', 'chrome-operator', 'web-operator'],
     codexName: 'browser_use_operator',
-    description: 'Terra Max Browser/Chrome operator for scoped website, localhost, webapp, and browser-based evidence collection or verification.',
+    description: 'Astra Medium Browser/Chrome operator for scoped website, localhost, webapp, and browser-based evidence collection or verification.',
     policy: 'terra_max_context_tools',
     sandbox: 'read-only',
     keywords: ['browser use', 'browser', 'chrome', 'website', 'webapp', 'localhost', 'playwright', 'browser evidence'],
@@ -269,7 +269,7 @@ Honor the parent permission scope, avoid destructive or irreversible UI actions,
     instructions: `You are the scoped Browser/Chrome operator.
 
 Use the Codex Chrome Extension path first for websites, localhost, webapps, and browser-based verification, and halt rapidly when the required extension is unavailable.
-Do not perform security, UX, debugging, or product judgment; collect precise browser evidence and hand it to the relevant Sol Max specialist.
+Do not perform security, UX, debugging, or product judgment; collect precise browser evidence and hand it to the relevant Astra Max specialist.
 Honor the parent permission scope, avoid destructive external actions, do not edit source files, and report URLs or sensitive values only in redacted form.`
   }),
   officialSubagentRole({
@@ -277,14 +277,14 @@ Honor the parent permission scope, avoid destructive external actions, do not ed
     filename: 'image-generation-operator.toml',
     aliases: ['image-generation-operator', 'imagegen-operator', 'image-tool-operator'],
     codexName: 'image_generation_operator',
-    description: 'Terra Max image-generation operator for scoped imagegen and GPT Image execution after the parent seals the visual requirements.',
+    description: 'Astra Medium image-generation operator for scoped imagegen and GPT Image execution after the parent seals the visual requirements.',
     policy: 'terra_max_context_tools',
     keywords: ['image generation', 'imagegen', 'gpt image', 'gpt-image-2', 'generate image', 'edit image', 'visual asset'],
     nicknames: ['Aperture', 'Frame', 'Palette', 'Render'],
     instructions: `You are the scoped image-generation operator.
 
 Execute only the sealed image-generation or image-editing instructions supplied by the parent, using the official Codex image generation surface when available.
-Do not perform UX review, art-direction judgment, or product strategy; return generated artifact paths and tool evidence to a Sol Max reviewer when judgment is required.
+Do not perform UX review, art-direction judgment, or product strategy; return generated artifact paths and tool evidence to a Astra Max reviewer when judgment is required.
 Write only assigned generated-asset paths, preserve source images, and never fabricate successful image output.`
   }),
   officialSubagentRole({
@@ -461,7 +461,7 @@ Return release blockers, exact evidence, and the minimal verification still requ
     filename: 'docs-maintainer.toml',
     aliases: ['docs-maintainer', 'documentation'],
     codexName: 'docs_maintainer',
-    description: 'Terra Max documentation maintainer for multi-source README, changelog, migration, and reference consistency after behavior is known.',
+    description: 'Astra Medium documentation maintainer for multi-source README, changelog, migration, and reference consistency after behavior is known.',
     policy: 'terra_max_context_tools',
     keywords: ['docs', 'documentation', 'readme', 'changelog', 'migration guide', 'reference'],
     nicknames: ['Ink', 'Page', 'Scribe', 'Slate'],

@@ -111,7 +111,7 @@ export function normalizeResearchFalsification(value: any, claimMatrix: any, sou
 function buildResearchFalsificationPrompt(input: { plan: any; claimMatrix: any; sourceLedger: any }) {
   return [
     'Attempt to falsify the key claims in this Research mission before manuscript synthesis.',
-    'This is a judgment-heavy task: use GPT-5.6 Sol with max reasoning.',
+    `This is a judgment-heavy task: use ${THINKING_SUBAGENT_MODEL} with ${SUBAGENT_EFFORT} reasoning.`,
     'Return exactly one JSON object matching sks.falsification-ledger.v1.',
     'Do not mark a claim as surviving by default. Compare the written claim with actual source notes/content and counterevidence.',
     'Use only known claim IDs and source IDs. A generic attack with no source-linked reasoning is invalid.',

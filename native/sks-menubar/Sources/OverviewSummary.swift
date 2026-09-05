@@ -85,7 +85,7 @@ enum OverviewSummary {
         return value
     }
 
-    private static func versionSummary(_ value: [String: Any]?) -> String {
+    static func versionSummary(_ value: [String: Any]?) -> String {
         guard let current = nonEmpty(value?["current"] as? String) else { return "not detected" }
         guard let latest = nonEmpty(value?["latest"] as? String) else { return current }
         if value?["update_available"] as? Bool == true, latest != current { return "\(current) → \(latest) available" }

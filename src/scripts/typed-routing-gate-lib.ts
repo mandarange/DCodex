@@ -224,7 +224,7 @@ async function richContentGate(id: string) {
     const codexHome = path.join(rootDir, 'codex-home')
     const report = await mod.syncCodexAgentRoles({ root: rootDir, codexHome, apply: true })
     const role = fs.readFileSync(path.join(rootDir, '.codex', 'agents', 'expert.toml'), 'utf8')
-    assertGate(role.includes('model = "gpt-5.6-sol"') && role.includes('Do not spawn another subagent.'), 'official expert role must include Sol Max and no-nesting instructions', { role, report })
+    assertGate(role.includes('model = "gpt-6-astra"') && role.includes('Do not spawn another subagent.'), 'official expert role must include Astra Max and no-nesting instructions', { role, report })
     assertGate(!fs.existsSync(path.join(codexHome, 'agents')), 'rich-content sync must not create global directive roles', report)
     emitGate(id, { roles: report.created.length })
   } finally {

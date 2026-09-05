@@ -36,7 +36,7 @@ import {
 
 const CHECKED_AT = '2026-08-05T00:00:00.000Z';
 
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, officialModel = false) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-mutation-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await fs.mkdir(path.join(home, '.codex'), { recursive: true });
@@ -86,7 +86,7 @@ async function fixture(t: test.TestContext) {
         provider_id: 'codex-lb',
         state: 'verified',
         generation: 'lb-provider-mutation-generation',
-        models: { models: [{ slug: 'lb-mutation-model', display_name: 'LB mutation model' }] }
+        models: { models: [{ slug: 'lb-mutation-model', display_name: 'LB mutation model' }, ...(officialModel ? [{ slug: 'gpt-6-astra', display_name: 'Astra' }] : [])] }
       },
       openrouter: {
         provider_id: 'openrouter',
@@ -419,4 +419,44 @@ test('validation CAS rejects a credential rotated while the exact prior secret i
     openrouter: { home: setup.home, processEnv: setup.env }
   });
   assert.equal(current['codex-lb'].state, 'configured_unverified');
+});
+
+
+test('authentication priority persists across controller restarts and restores the prior official mode', async (t) => {
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup);
+  const authPath = path.join(setup.home, '.codex', 'auth.json');
+  const authBytes = JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'unchanged-chatgpt-secret', account_id: 'fixture-account' } });
+  await fs.writeFile(authPath, authBytes, { mode: 0o600 });
+  const original = await executeDesktopBridgeCommandV3({ operation: 'route.official-models', mode: 'passthrough' }, runtime.options);
+  assert.equal(original.schema, 'sks.desktop-bridge-command-result.v1');
+  if (original.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(original.ok, true, JSON.stringify(original));
+  const enabled = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: true }, runtime.options);
+  assert.equal(enabled.schema, 'sks.desktop-bridge-command-result.v1');
+  if (enabled.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(enabled.ok, true, JSON.stringify(enabled));
+  assert.deepEqual(enabled.result.auth_priority, { enabled: true, state: 'active', error: null });
+  let settings = await readDesktopBridgeServiceSettings(desktopBridgeServicePaths(setup.home).settings_path);
+  assert.equal(settings?.auth_priority_enabled, true);
+  assert.equal(settings?.official_passthrough.models, 'passthrough');
+  assert.equal(settings?.route_policy.model_routes['gpt-6-astra']?.provider_id, 'codex-lb');
+  assert.equal(settings?.route_policy.model_routes['codex-lb:gpt-6-astra']?.provider_id, 'codex-lb');
+  const restarted = commandOptions(setup);
+  const status = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.status' }, restarted.options);
+  assert.equal(status.schema, 'sks.desktop-bridge-command-result.v1');
+  if (status.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.deepEqual(status.result.auth_priority, enabled.result.auth_priority);
+  const disabled = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: false }, restarted.options);
+  assert.equal(disabled.schema, 'sks.desktop-bridge-command-result.v1');
+  if (disabled.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(disabled.ok, true, JSON.stringify(disabled));
+  settings = await readDesktopBridgeServiceSettings(desktopBridgeServicePaths(setup.home).settings_path);
+  assert.equal(settings?.auth_priority_enabled, false);
+  assert.equal(settings?.official_passthrough.models, 'passthrough');
+  assert.equal(settings?.route_policy.model_routes['gpt-6-astra']?.provider_id, 'openai');
+  assert.equal(settings?.route_policy.model_routes['codex-lb:gpt-6-astra']?.provider_id, 'codex-lb');
+  assert.equal(await fs.readFile(authPath, 'utf8'), authBytes);
+  assert.doesNotMatch(JSON.stringify([enabled, status, disabled, settings]), /unchanged-chatgpt-secret|lb-provider-mutation-secret|or-provider-mutation-secret/);
+  assert.deepEqual(restarted.events, ['bootstrap']);
 });

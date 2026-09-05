@@ -1,12 +1,14 @@
-export const NARUTO_PARENT_MODEL = 'gpt-5.6-sol'
+export const NARUTO_PARENT_MODEL = 'gpt-6-astra'
 export const NARUTO_PARENT_EFFORT = 'max'
 
 export const LUNA_SUBAGENT_MODEL = 'gpt-5.6-luna'
-export const TERRA_SUBAGENT_MODEL = 'gpt-5.6-terra'
-export const SOL_SUBAGENT_MODEL = 'gpt-5.6-sol'
+export const ASTRA_SUBAGENT_MODEL = 'gpt-6-astra'
+// Legacy model names remain aliases for callers using the stable policy IDs.
+export const TERRA_SUBAGENT_MODEL = ASTRA_SUBAGENT_MODEL
+export const SOL_SUBAGENT_MODEL = ASTRA_SUBAGENT_MODEL
 
 export const LUNA_SUBAGENT_EFFORT = 'max'
-export const TERRA_SUBAGENT_EFFORT = 'max'
+export const TERRA_SUBAGENT_EFFORT = 'medium'
 export const DEFAULT_SUBAGENT_EFFORT = 'high'
 export const SOL_MAX_SUBAGENT_EFFORT = 'max'
 
@@ -27,8 +29,8 @@ export type SubagentContextMode = 'short' | 'long'
 export type SubagentToolSurface = 'none' | 'computer_use' | 'browser' | 'image_generation'
 export type SubagentScopeSize = 'tiny' | 'bounded' | 'large'
 export type SubagentKind = 'worker' | 'expert'
-export type SubagentModel = typeof LUNA_SUBAGENT_MODEL | typeof TERRA_SUBAGENT_MODEL | typeof SOL_SUBAGENT_MODEL
-export type SubagentModelReasoningEffort = 'high' | 'max'
+export type SubagentModel = typeof LUNA_SUBAGENT_MODEL | typeof ASTRA_SUBAGENT_MODEL
+export type SubagentModelReasoningEffort = 'medium' | 'high' | 'max'
 
 export interface SubagentModelProfile {
   policy: SubagentModelPolicyId
@@ -359,9 +361,9 @@ export function decideSubagentModel(input: {
     && /\b(?:already|previously|fully)\s+resolved\b|(?:review|debug|architecture)[^\n]{0,32}\bcontext\b[^\n]{0,16}\bresolved\b|(?:리뷰|검토|디버깅|아키텍처)[^\n]{0,24}(?:이미\s*)?해결/i.test(text)
   if (focusedJudgment && !resolvedIncidentalJudgment) return decision('sol_max_judgment')
 
-  // Large first-draft processing is a Terra responsibility even when the
+  // Large first-draft processing uses Astra Medium even when the
   // prompt contains implementation verbs. Keep this narrow so normal feature
-  // implementation remains on Sol High.
+  // implementation remains on Astra High.
   if (LARGE_FIRST_DRAFT_TASK_RE.test(text)) return decision('terra_max_context_tools')
 
   const simpleMechanical = input.simpleMechanical === true
@@ -381,7 +383,7 @@ export function decideSubagentModel(input: {
   const judgment = JUDGMENT_TASK_RE.test(text)
   if (judgment) return decision('sol_max_judgment')
 
-  // Ambiguous work defaults to the trust-first lane. Sol High is reserved for
+  // Ambiguous work defaults to the trust-first lane. Astra High is reserved for
   // clearly identified implementation, not for underspecified judgment.
   return decision('sol_max_judgment')
 }

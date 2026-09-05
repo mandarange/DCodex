@@ -6,48 +6,47 @@ import type { CodexTaskInput } from '../../codex-control/codex-control-plane.js'
 import { buildCodexExecutionPolicy, buildCodexSdkConfig } from '../../codex-control/codex-sdk-config-policy.js';
 import { normalizeCodexModelEffortCatalogPayload } from '../../codex-lb/codex-lb-env.js';
 
-const models = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'];
+const models = ['gpt-5.6-luna', 'gpt-6-astra'];
 const modelEfforts = {
   'gpt-5.6-luna': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'gpt-5.6-terra': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'gpt-5.6-sol': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 };
 
-test('Naruto GPT-5.6 policy maps all four sealed profiles', () => {
+test('Naruto Luna/Astra policy maps all four sealed profiles', () => {
   const available = { availableModels: models, availableModelEfforts: modelEfforts };
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'implementation code_modification' }), {
-    model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'high', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'exact one-line single-file rename' }), {
     model: 'gpt-5.6-luna', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'implementation', riskText: 'critical security migration' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'refactor architecture integration_support browser' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'conflict_resolution patch_rebase' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'test_execution browser' }), {
-    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'medium', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'test_execution GUI', riskText: 'forensic cross-app failure' }), {
-    model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
   });
 });
 
-test('native worker routing propagates simple EN/KO Luna, Terra Max, Sol High, and Sol Max choices', async () => {
+test('native worker routing propagates simple EN/KO Luna, Astra Medium, High, and Max choices', async () => {
   const catalog = { ok: true, models, model_efforts: modelEfforts, blockers: [] };
   const cases = [
     ['Simple coding change: update one constant', 'gpt-5.6-luna', 'max'],
     ['간단한 설정 변경으로 플래그만 켜줘', 'gpt-5.6-luna', 'max'],
     ['간단한 셋업으로 한 줄만 추가해줘', 'gpt-5.6-luna', 'max'],
-    ['Rapid large-scale first-draft code processing across many files', 'gpt-5.6-terra', 'max'],
-    ['장기 메모리를 정리하고 통합해줘', 'gpt-5.6-terra', 'max'],
-    ['Implement the ordinary parser logic', 'gpt-5.6-sol', 'high'],
-    ['Debug the release security failure', 'gpt-5.6-sol', 'max']
+    ['Rapid large-scale first-draft code processing across many files', 'gpt-6-astra', 'medium'],
+    ['장기 메모리를 정리하고 통합해줘', 'gpt-6-astra', 'medium'],
+    ['Implement the ordinary parser logic', 'gpt-6-astra', 'high'],
+    ['Debug the release security failure', 'gpt-6-astra', 'max']
   ] as const;
   for (const [description, model, effort] of cases) {
     const routing = await resolveWorkerModelRouting({
@@ -62,16 +61,16 @@ test('native worker routing propagates simple EN/KO Luna, Terra Max, Sol High, a
   }
 });
 
-test('Naruto GPT-5.6 policy fails closed for missing model or unadvertised effort', () => {
+test('Naruto Luna/Astra policy fails closed for missing model or unadvertised effort', () => {
   assert.equal(routeNarutoGpt56Model({
     taskText: 'exact one-line single-file rename',
-    availableModels: ['gpt-5.6-sol'],
+    availableModels: ['gpt-6-astra'],
     availableModelEfforts: modelEfforts
   }).model, '');
   assert.equal(routeNarutoGpt56Model({
     taskText: 'refactor strategy',
     availableModels: models,
-    availableModelEfforts: { ...modelEfforts, 'gpt-5.6-sol': ['xhigh'] }
+    availableModelEfforts: { ...modelEfforts, 'gpt-6-astra': ['xhigh'] }
   }).model, '');
 });
 
@@ -84,7 +83,7 @@ test('native Naruto worker routing passes the exact selected model and effort in
     fastModePolicy: { fast_mode: true, service_tier: 'fast' }
   }, { lbCatalog: catalog, lbHealth: { ok: true, degraded_models: [] }, env: {} });
   assert.equal(routing.blockers.length, 0);
-  assert.equal(routing.choice.model, 'gpt-5.6-sol');
+  assert.equal(routing.choice.model, 'gpt-6-astra');
   assert.equal(routing.choice.reasoning, 'max');
   const task: CodexTaskInput = {
     route: '$Naruto',
@@ -103,7 +102,7 @@ test('native Naruto worker routing passes the exact selected model and effort in
     serviceTier: routing.choice.serviceTier
   };
   const config = buildCodexSdkConfig(task);
-  assert.equal(config.model, 'gpt-5.6-sol');
+  assert.equal(config.model, 'gpt-6-astra');
   assert.equal(config.model_reasoning_effort, 'max');
   assert.equal(buildCodexExecutionPolicy(task).sandbox, 'read-only');
   assert.equal(buildCodexExecutionPolicy({

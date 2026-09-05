@@ -215,6 +215,21 @@ function extractSqlLiterals(command: any = '') {
     let m;
     while ((m = re.exec(command))) out.push(m[2]);
   }
+  const psqlHeaders = /\bpsql\b[^\n]*(?:\n|$)/gi;
+  let header;
+  while ((header = psqlHeaders.exec(command))) {
+    const redirects = header[0].match(/<</g) || [];
+    if (!redirects.length) continue;
+    const opener = /<<(-?)\s*(?:(['"])([A-Za-z_][A-Za-z0-9_]*)\2|\\?([A-Za-z_][A-Za-z0-9_]*))(?=\s|$)/.exec(header[0]);
+    // Unsupported or competing stdin redirects are unknown SQL input. Keep
+    // the full remainder so destructive statements retain their risk, never a safe
+    // verdict inferred from only the first heredoc.
+    if (redirects.length !== 1 || !opener) { out.push(command.slice(header.index)); continue; }
+    const body = command.slice(psqlHeaders.lastIndex);
+    const delimiter = opener[3] || opener[4];
+    const end = body.search(new RegExp(`${opener[1] ? '^\\t*' : '^'}${delimiter}\\r?$`, 'm'));
+    out.push(end < 0 ? body : body.slice(0, end));
+  }
   if (looksLikeSqlText(command)) out.push(command);
   return out;
 }
@@ -234,7 +249,7 @@ function recursivelyCollectStrings(obj: any, out: any = [], depth: any = 0) {
 function looksLikeSqlText(text: any = '') {
   const s = stripSqlComments(text).trim();
   return /^(select|with|show|explain|describe|insert|update|delete|drop|truncate|alter|create|grant|revoke)\b/i.test(s)
-    || /;\s*(select|with|show|explain|describe|insert|update|delete|drop|truncate|alter|create|grant|revoke)\b/i.test(s);
+    || /;\s*(select|with|show|explain|describe|insert|update|delete\s+from|drop|truncate|alter|create|grant|revoke)\b/i.test(s);
 }
 
 function hasReadOnlyDbInspectionIntent(text: any = '') {
@@ -304,7 +319,11 @@ export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_PO
   const effective = contractAllowsDbWrite(contract || {});
   if (cls.level === 'none') return { allowed: true, action: 'allow', reasons: [], classification: cls };
   if (cls.level === 'safe') return { allowed: true, action: 'allow', reasons: ['read_only_operation'], classification: cls };
-  if (cls.level === 'possible_db') return { allowed: !noQuestion, action: noQuestion ? 'block' : 'warn', reasons: noQuestion ? ['unknown_database_operation_blocked_during_no_question_run'] : ['unknown_database_operation'], classification: cls };
+  if (cls.level === 'possible_db') {
+    const unknownDatabaseTool = cls.toolReasons?.includes('database_tool') === true;
+    const blocked = noQuestion || unknownDatabaseTool;
+    return { allowed: !blocked, action: blocked ? 'block' : 'warn', reasons: noQuestion ? ['unknown_database_operation_blocked_during_no_question_run'] : unknownDatabaseTool ? ['unknown_database_tool_requires_explicit_input'] : ['unknown_database_operation'], classification: cls };
+  }
   if (madSks?.active && (cls.level === 'write' || cls.level === 'destructive')) {
     const madGate = evaluateMadSksPermissionGate({ classification: cls, active: true });
     if (!madGate.allowed) {

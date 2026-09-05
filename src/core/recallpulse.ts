@@ -4,8 +4,8 @@ import { appendJsonlBounded, exists, nowIso, readJson, readText, sha256, writeJs
 import { missionDir } from './mission.js';
 import { ROUTES } from './routes.js';
 
-import { EVIDENCE_ENVELOPE_ARTIFACT, MISSION_STATUS_HISTORY_ARTIFACT, MISSION_STATUS_LEDGER_ARTIFACT, RECALLPULSE_DECISION_ARTIFACT, RECALLPULSE_EVAL_ARTIFACT, RECALLPULSE_GOVERNANCE_ARTIFACT, RECALLPULSE_HISTORY_ARTIFACT, RECALLPULSE_POLICY, RECALLPULSE_TASK_GOAL_LEDGER_ARTIFACT, RECALLPULSE_TASKS_FILE, RESEARCH_AGENT_PERSONA_CONTRACT, ROUTE_PROOF_CAPSULE_ARTIFACT } from './recallpulse/policy.js';
-export { EVIDENCE_ENVELOPE_ARTIFACT, MISSION_STATUS_HISTORY_ARTIFACT, MISSION_STATUS_LEDGER_ARTIFACT, RECALLPULSE_DECISION_ARTIFACT, RECALLPULSE_EVAL_ARTIFACT, RECALLPULSE_GOVERNANCE_ARTIFACT, RECALLPULSE_HISTORY_ARTIFACT, RECALLPULSE_POLICY, RECALLPULSE_TASK_GOAL_LEDGER_ARTIFACT, RECALLPULSE_TASKS_FILE, RESEARCH_AGENT_PERSONA_CONTRACT, ROUTE_PROOF_CAPSULE_ARTIFACT } from './recallpulse/policy.js';
+import { EVIDENCE_ENVELOPE_ARTIFACT, MISSION_STATUS_HISTORY_ARTIFACT, MISSION_STATUS_LEDGER_ARTIFACT, RECALLPULSE_DECISION_ARTIFACT, RECALLPULSE_EVAL_ARTIFACT, RECALLPULSE_GOVERNANCE_ARTIFACT, RECALLPULSE_HISTORY_ARTIFACT, RECALLPULSE_POLICY, RECALLPULSE_TASK_GOAL_LEDGER_ARTIFACT, RECALLPULSE_TASKS_FILE, ROUTE_PROOF_CAPSULE_ARTIFACT } from './recallpulse/policy.js';
+export { EVIDENCE_ENVELOPE_ARTIFACT, MISSION_STATUS_HISTORY_ARTIFACT, MISSION_STATUS_LEDGER_ARTIFACT, RECALLPULSE_DECISION_ARTIFACT, RECALLPULSE_EVAL_ARTIFACT, RECALLPULSE_GOVERNANCE_ARTIFACT, RECALLPULSE_HISTORY_ARTIFACT, RECALLPULSE_POLICY, RECALLPULSE_TASK_GOAL_LEDGER_ARTIFACT, RECALLPULSE_TASKS_FILE, RESEARCH_REVIEWER_CONTRACT, ROUTE_PROOF_CAPSULE_ARTIFACT } from './recallpulse/policy.js';
 
 export function recallPulseMissionDir(root: any, missionId: any) {
   if (!missionId) throw new Error('RecallPulse requires a mission id');
@@ -180,7 +180,7 @@ export function buildEvidenceEnvelope(decision: any = {}) {
     merge_rules: ['same_claim_ids_merge_by_newest_fresh_source', 'conflicts_block_final_claims'],
     stale_rules: ['stale_when_stage_changes', 'stale_when_gate_updates', 'stale_when_source_hash_changes'],
     route_extensions: {
-      Research: ['source_layer_ids', 'agent_persona_ids', 'falsification_cases'],
+      Research: ['source_layer_ids', 'reviewer_ids', 'falsification_cases'],
       Naruto: ['official_subagent_roster', 'review_lanes', 'runtime_task_ids'],
       DB: ['db_scan_id', 'destructive_operation_zero'],
       QALoop: ['qa_report', 'checklist_status'],
@@ -206,8 +206,8 @@ export async function evaluateRecallPulseFixtures(root: any, opts: any = {}) {
       fixture('repeated-stop-hook-blocker', true, 'Duplicate suppression keys collapse repeated blocker text into one durable status row.'),
       fixture('hook-only-status-visibility', true, 'mission-status-ledger.json preserves recoverable user-visible status.'),
       fixture('research-persona-missing', true, 'Research validation blocks missing agent display_name/persona/persona_boundary.'),
-      fixture('research-model-policy-not-sol-max', true, 'Research validation blocks reviewer rows that are not bound to the research_reviewer GPT-5.6 Sol Max policy.'),
-      fixture('research-eureka-missing', true, 'Research validation blocks missing literal Eureka! ideas.'),
+      fixture('research-model-policy-not-sol-max', true, 'Research validation blocks reviewer rows that are not bound to the research_reviewer GPT-6 Astra Max policy.'),
+      fixture('research-review-evidence-missing', true, 'Research validation blocks reviewer outcomes without source evidence, falsifiers, or probes.'),
       fixture('research-impersonation', true, 'Research validation blocks persona-boundary violations.'),
       fixture('oversized-l1', true, 'L1 token and item limits reject oversized active recall.'),
       fixture('l1-omits-high-risk-blocker', true, 'Required-recall metrics capture missed high-risk blockers.'),
@@ -377,7 +377,7 @@ export async function buildRecallPulseGovernanceReport(root: any, opts: any = {}
       ],
       migration_paths: {
         existing_missions: 'Run sks recallpulse run <mission-id> and sks recallpulse governance <mission-id> to add report-only artifacts.',
-        existing_research_artifacts: 'Research gates require agent display_name/persona/persona_boundary fields and the research_reviewer GPT-5.6 Sol Max binding; old ledgers must be migrated before claiming pass.',
+        existing_research_artifacts: 'Research gates require agent display_name/persona/persona_boundary fields and the research_reviewer GPT-6 Astra Max binding; old ledgers must be migrated before claiming pass.',
         generated_skills: 'Do not edit generated installed skills directly; rerun init/bootstrap from engine source when generated text needs refreshing.'
       },
       release_gate: 'RecallPulse remains report-only unless packcheck, selftest, sizecheck, registry metadata check, TriWiki validate, and RecallPulse fixture eval pass.'
@@ -385,45 +385,6 @@ export async function buildRecallPulseGovernanceReport(root: any, opts: any = {}
   };
   if (missionId) await writeJsonAtomic(path.join(recallPulseMissionDir(root, missionId), RECALLPULSE_GOVERNANCE_ARTIFACT), report);
   return report;
-}
-
-export function validateResearchAgentPersonas(agentLedger: any = {}, geniusSummaryText: any = '') {
-  const rows = Array.isArray(agentLedger?.agents) ? agentLedger.agents : [];
-  const issues: any[] = [];
-  const byId = new Map(RESEARCH_AGENT_PERSONA_CONTRACT.map((agent: any) => [agent.id, agent]));
-  const displayNames = new Set();
-  for (const expected of RESEARCH_AGENT_PERSONA_CONTRACT) {
-    const row = rows.find((item: any) => item?.id === expected.id);
-    if (!row) {
-      issues.push(`${expected.id}:missing`);
-      continue;
-    }
-    if (!row.display_name) issues.push(`${expected.id}:display_name_missing`);
-    if (!row.persona) issues.push(`${expected.id}:persona_missing`);
-    if (!row.persona_boundary) issues.push(`${expected.id}:persona_boundary_missing`);
-    if (row.persona_boundary && !/do not impersonate|not impersonat|lens only/i.test(row.persona_boundary)) issues.push(`${expected.id}:persona_boundary_not_enforced`);
-    const modelPolicy = row.model_policy && typeof row.model_policy === 'object' ? row.model_policy : row;
-    if (modelPolicy.custom_agent !== 'research_reviewer') issues.push(`${expected.id}:custom_agent_not_research_reviewer`);
-    if (modelPolicy.model !== 'gpt-5.6-sol') issues.push(`${expected.id}:model_not_sol`);
-    if (modelPolicy.reasoning_effort !== 'max' && modelPolicy.model_reasoning_effort !== 'max') issues.push(`${expected.id}:effort_not_max`);
-    if (row.service_tier && row.service_tier !== 'fast') issues.push(`${expected.id}:service_tier_not_fast`);
-    if (!row.eureka?.idea || row.eureka?.exclamation !== 'Eureka!') issues.push(`${expected.id}:eureka_missing`);
-    if (!Array.isArray(row.falsifiers)) issues.push(`${expected.id}:falsifiers_missing`);
-    if (!Array.isArray(row.cheap_probes)) issues.push(`${expected.id}:cheap_probe_missing`);
-    if (!row.challenge_or_response) issues.push(`${expected.id}:challenge_or_response_missing`);
-    if (row.display_name) displayNames.add(row.display_name);
-    const text = JSON.stringify(row).toLowerCase();
-    const inspiration = String(byId.get(expected.id)?.historical_inspiration || '').toLowerCase();
-    if (inspiration && inspiration !== 'counterevidence discipline' && new RegExp(`\\bi am ${escapeRegex(inspiration)}\\b|\\bas ${escapeRegex(inspiration)}\\b`).test(text)) {
-      issues.push(`${expected.id}:impersonation_claim`);
-    }
-  }
-  if (displayNames.size !== RESEARCH_AGENT_PERSONA_CONTRACT.length) issues.push('display_names_not_unique');
-  const lowerSummary = String(geniusSummaryText || '').toLowerCase();
-  for (const expected of RESEARCH_AGENT_PERSONA_CONTRACT) {
-    if (lowerSummary && !lowerSummary.includes(expected.display_name.toLowerCase())) issues.push(`${expected.id}:summary_display_name_missing`);
-  }
-  return { ok: issues.length === 0, issues };
 }
 
 export async function updateRecallPulseTaskChecklist(root: any, completedIds: any = []) {
@@ -911,7 +872,7 @@ function preservedRoutePersonality(routeId: any = '', routeName: any = '') {
     ImageUXReview: 'Image UX Review keeps gpt-image-2 annotated raster review identity',
     ComputerUse: 'Computer Use keeps maximum-speed native Mac/non-web visual lane identity',
     Goal: 'Goal uses Codex native /goal only and creates no SKS-owned persistence, artifact, loop, or fallback state',
-    Research: 'Research keeps Super Search evidence, three composite Sol Max adversarial lenses, bounded revision, paper, and falsification identity',
+    Research: 'Research keeps Super Search evidence, three independent Astra Max review dimensions, bounded revision, paper, and falsification identity',
     AutoResearch: 'AutoResearch keeps iterative experiment loop identity',
     DB: 'DB keeps conservative read-first destructive-operation safety identity',
     MadSKS: 'MAD-SKS keeps explicit scoped high-risk authorization identity',
@@ -986,8 +947,4 @@ function range(start: any, end: any) {
   const out: any[] = [];
   for (let i = start; i <= end; i++) out.push(i);
   return out;
-}
-
-function escapeRegex(text: any = '') {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

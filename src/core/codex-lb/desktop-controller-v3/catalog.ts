@@ -143,13 +143,14 @@ export async function syncCatalogInternal(
   // broke Codex Apps connector links and conversation affinity) nor flip a
   // deliberate gateway operator onto passthrough.
   const persistedSettings = await readDesktopBridgeServiceSettings(
-    desktopBridgeServicePaths(paths.home).settings_path,
+    options.settingsPath || desktopBridgeServicePaths(paths.home).settings_path,
   ).catch(() => null);
   const officialModelsMode = await resolveEffectiveOfficialModelsMode(
     persistedSettings?.official_passthrough,
     {
       home: paths.home,
       authPath: paths.authPath,
+      authPriorityEnabled: options.settings?.auth_priority_enabled ?? persistedSettings?.auth_priority_enabled ?? false,
       // Registering + enabling codex-lb IS the operator choosing the gateway;
       // un-registering converges a ChatGPT-OAuth host back onto its identity.
       codexLbRegistered: registry.profiles['codex-lb'].enabled && registry.profiles['codex-lb'].state === 'ready',
@@ -197,7 +198,7 @@ export async function syncCatalogInternal(
       },
       { kind: 'catalog_binding', path: staging.pointer_path, text: staging.pointer_text },
       { kind: 'route_policy', path: paths.routePolicyPath, text: `${JSON.stringify(policy, null, 2)}\n` },
-      { kind: 'bridge_settings', path: desktopBridgeServicePaths(paths.home).settings_path, text: serializedSettings(settings) }
+      { kind: 'bridge_settings', path: options.settingsPath || desktopBridgeServicePaths(paths.home).settings_path, text: serializedSettings(settings) }
     ]
   });
   if (!migration.ok) {

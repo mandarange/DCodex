@@ -2,9 +2,8 @@ import Cocoa
 
 /// Shared visual components for Control Center pages.
 ///
-/// Not referenced from the standalone-compiled units (OverviewViewController,
-/// OperationCoordinator, ProcessClient, NotificationCoordinator) — their swiftc
-/// test harnesses compile without this file.
+/// Core layout and disclosure components live in NativeView.swift; this file
+/// supplies the optional visual helpers used by individual Center pages.
 enum ControlKitTone {
     case ok, warning, error, neutral, busy
 

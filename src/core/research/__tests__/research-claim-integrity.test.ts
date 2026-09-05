@@ -8,12 +8,25 @@ import { buildSourceQualityReport } from '../source-quality-report.js'
 import { recalculateResearchClaimEvidenceMatrix } from '../research-claim-synthesizer.js'
 import { validateClaimEvidenceMatrix } from '../claim-evidence-matrix.js'
 import { normalizeResearchSynthesisOutput, validateResearchSynthesisOutput } from '../research-synthesis-writer.js'
+import { createResearchPlan, defaultAgentLedger } from '../../research.js'
 
-test('Research source acquisition uses Terra Max while judgment stages remain separate', () => {
+test('Research source acquisition uses Astra Medium and reviewer plans retain Astra Max', () => {
   assert.deepEqual(RESEARCH_SOURCE_ACQUISITION_MODEL_POLICY, {
-    model: 'gpt-5.6-terra',
-    model_reasoning_effort: 'max'
+    model: 'gpt-6-astra',
+    model_reasoning_effort: 'medium'
   })
+  const plan = createResearchPlan('Check research model routing')
+  assert.equal(plan.research_council.effort_policy.required_model, 'gpt-6-astra')
+  assert.equal(plan.research_council.effort_policy.required_effort, 'max')
+  const reviewers = [
+    ...plan.agent_sessions,
+    ...plan.research_council.agents,
+    ...defaultAgentLedger(plan).agents.map((agent: any) => agent.model_policy)
+  ]
+  for (const reviewer of reviewers) {
+    assert.equal(reviewer.model, 'gpt-6-astra')
+    assert.equal(reviewer.reasoning_effort, 'max')
+  }
 })
 
 test('unrelated live-looking sources cannot fabricate a shared high-confidence stage claim', async () => {

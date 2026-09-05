@@ -2,8 +2,45 @@
 
 ## [Unreleased]
 
+## [10.1.0] - 2026-09-05
 
+### Added
 
+- Add a persistent codex-lb authentication-priority setting, exposed through
+  `sks bridge auth-priority status|on|off` and SKS Center, with explicit active,
+  off, and unavailable status.
+
+### Changed
+
+- Improve SKS Center setup, navigation, and connection and maintenance controls
+  so users can find the current state and the action needed to change it.
+- Use GPT-6 Astra for standalone Naruto defaults and managed implementation,
+  judgment, and context/tool roles. Tiny mechanical workers retain GPT-5.6
+  Luna Max. Active tasks preserve the user's selected model, reasoning effort,
+  and service tier; model capabilities come from the current Codex catalog.
+- Remove the unused V1 dynamic release/cache implementation, detached scheduler
+  and ledger helpers, report-presence flagship proof chain, and synthetic
+  parallel-smoke marketing evidence. The active V2 release DAG, real execution
+  checks, source integrity, and safety checks remain.
+- Research review uses evidence, method, and falsification findings without
+  requiring historical personas, a prescribed genius summary, or resolution of
+  every minor comment. Material findings and source integrity remain enforced.
+- Document the direct `npm publish` handoff against the final clean commit,
+  with full release proof, package provenance, and maintainer authentication.
+  Earlier release records retain their original versions and evidence.
+
+### Fixed
+
+- `sks update` uses the same installed-package doctor and convergence path
+  when the package is already current, so an update still reconciles managed
+  runtime state. Nested postinstall bootstrap is suppressed to keep the updater
+  responsible for maintenance and final verification.
+- A package-local doctor run cannot reuse a previous report as current success,
+  and timed-out runs cannot pass the update's verification.
+- Persist lightweight pipeline plans, read pipeline status from the calling
+  session, and preserve the active mission during maintenance Align. Align,
+  Wiki validation, and hook preflight share extractor identity; generated packs
+  and maps no longer invalidate their own source fingerprints.
 
 ## [10.0.0] - 2026-09-02
 

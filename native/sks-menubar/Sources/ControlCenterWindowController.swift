@@ -101,7 +101,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let item = SidebarItem.allCases[row]
-        let field = NSTextField(labelWithString: item.rawValue)
+        let field = NSTextField(labelWithString: item.displayTitle)
         field.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: item.symbolName, accessibilityDescription: nil)
@@ -113,7 +113,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
         cell.alignment = .centerY
         cell.spacing = 7
         cell.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 0)
-        cell.setAccessibilityLabel(item.rawValue)
+        cell.setAccessibilityLabel(item.displayTitle)
         cell.setAccessibilityIdentifier("sks-center-sidebar-\(item.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))")
         return cell
     }

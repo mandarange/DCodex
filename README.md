@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 10.0.0** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 10.1.0** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. The Codex compatibility SSOT is always the **current latest stable** host; capability probes measure what that host can actually do. Product docs do not crown a fixed `0.x.y` string as SSOT (release pins and schema directories are measured artifacts for the current package, not a permanent product version claim). Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is supported. Install SSOT is npm `sneakoscope@latest`; PATH `sks` and Menu Bar stamped generation must match that version or gates fail. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it (Codex official multi-agent wrap-only; SKS does not reimplement a parallel runtime). Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph (`context-graph.json` is exhaustive authority; `context-pack.json` and managed `AGENTS.md` are bounded projections) — see [docs/architecture/context-graph.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/architecture/context-graph.md) and [docs/PRODUCT-CONTRACT.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/PRODUCT-CONTRACT.md). See [CHANGELOG.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/CHANGELOG.md).
 
@@ -175,7 +175,7 @@ receipt-backed path. Ambiguous user-owned configuration fails closed. Use
 
 ## Naruto Workflow
 
-`$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. The parent is GPT-5.6 Sol Max. Tiny mechanical `worker` slices—including clear simple code, configuration, and setup changes—use Luna Max; ordinary UI, logic, backend, and native coding uses Sol High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Sol Max; long-context scans, long-term memory, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image-generation execution use Terra Max. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Sol Max.
+`$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. A standalone parent defaults to GPT-6 Astra Max; an active Codex task keeps its selected model. Tiny mechanical `worker` slices—including clear simple code, configuration, and setup changes—use Luna Max; ordinary UI, logic, backend, and native coding uses Astra High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Astra Max; long-context scans, long-term memory, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image-generation execution use Astra Medium. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Astra Max.
 
 Fresh SKS-owned project config enables Codex multi-agent V2 with an effective
 cap of `agents.max_concurrent_threads_per_session = 256` children and
@@ -187,7 +187,7 @@ warning; it is not an entitlement to spawn 1000 children. Explicit
 `--agents` and `--max-threads` values above 256 are rejected.
 
 Naruto's automatic starting tiers are 4/6/8 children for ordinary work and 16
-for mass cheap-model work. After decomposition, either lane may expand to the
+for mass mechanical or exploration work. After decomposition, either lane may expand to the
 SKS-owned ceiling of 256 independent useful children. Explicit
 `--agents N` and `--max-threads N` values from 1 through 256 remain
 authoritative instead of being reduced to those automatic tiers. A first wave

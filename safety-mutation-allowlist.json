@@ -155,87 +155,6 @@
       "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
     },
     {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "bestEffortCleanup",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "ee7ecbb001524bc8534b77b3ae81db65da2d5a32e1c833f9caa3a9e7104755f6",
-      "callsite_sha256": "46d4c153aafd6c1cc2307abc8785ec6252ceb5be13f8ac409acd7890c91da27e",
-      "occurrence": 1,
-      "reason": "Parallel production smoke best-effort cleanup removes only its own mkdtemp-created fixture root on failure."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "cleanupWorktreesAndBranches",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "df3e90540f81d52cb21440967f5004092dfca44c606f7dabfc4bab408dbfb568",
-      "callsite_sha256": "44dc957f60645db330ff7e593d8e5881de193b0e30d9002a9d32d86b7777e673",
-      "occurrence": 1,
-      "reason": "Parallel production smoke removes only its mkdtemp-created worktree fixture root after cleanup proof is recorded."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "0a3d945306e6577d8e2bfd030dc924084ced151cd666e5eba4236401bbf2c301",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "565eb537168d85d2bd0af8c8882cfcf11efd619a6dfc84ec972602ff310228e7",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "78d0954d707c300ada15f8fcc48931708424819c5dfb356215a7f8e4d0bbf15a",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "aba95b9b4bb1ef5b6af81cf68788dcb6273e1b8f01edbcc1baf99025c18ec943",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "bb464ecd5e6ff4fc249a02493b2be46b18ab4e53385b9859a355e105cc9c5336",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "createFixtureRepo",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "6b9d2b37a42edf564a2d54c567ba4e4b8c4dfb7fc6c0f8e4971808a7db6f4aa2",
-      "callsite_sha256": "d6be7128645cd3c1a6f2d1619a34d8c2dfd4010d89ebe4bc543ae4a20848b4f3",
-      "occurrence": 1,
-      "reason": "Parallel production smoke writes only files inside its mkdtemp-created fixture repository before proving worker merge behavior."
-    },
-    {
-      "file": "src/core/agents/parallel-write-fixture.ts",
-      "symbol": "runWorker",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "bae780b40b279d3a940516112eea5a90a9caf86adb86d6d14909916f93e22fbf",
-      "callsite_sha256": "9b05052f3c61178810f3a3ab8d10d4ef02d6a9ac94df525f2511d6e5ecf2bba6",
-      "occurrence": 1,
-      "reason": "Parallel production smoke worker writes only its assigned file inside an isolated git worktree fixture."
-    },
-    {
       "file": "src/core/build/build-once-runner.ts",
       "symbol": "runBuildOnce",
       "token": "rmSync",
@@ -806,8 +725,8 @@
       "file": "src/core/codex-lb/desktop-service.ts",
       "symbol": "writeDesktopBridgeServiceSettingsUnlocked",
       "token": "chmod",
-      "scope_contract_sha256": "cd7773fcc16633185f66abd5cbd7fcfef2a7ddab7c2456e0210254cef5165c4f",
-      "callsite_sha256": "50470fab31b5b48c2bb6815fe100f7e00993d98b7a8be183c16ad8b78caf1240",
+      "scope_contract_sha256": "2d9cbc9907b79a0b3f0c31610d1d9f00f31f6d98319ddce44079e6e5f3d621da",
+      "callsite_sha256": "5e8d23b526b2d1a9c96ff7476bde8a36a2d63f1c1ba51041d4185dab2e021709",
       "occurrence": 1,
       "reason": "The service settings writer applies 0600 only to the validated settings document it just wrote atomically."
     },
@@ -2299,6 +2218,15 @@
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
       "symbol": "verifyNpmStageTarball",
+      "token": "renameSync",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "082edba0ce6aefe68f2332145b7d3631c790cd6b24daa828784b5aae4c09f92d",
+      "occurrence": 1,
+      "reason": "Stage verification atomically promotes only its completed run-unique review directory to the requested output path."
+    },
+    {
+      "file": "src/core/release/npm-stage-tarball-verifier.ts",
+      "symbol": "verifyNpmStageTarball",
       "token": "chmodSync",
       "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
       "callsite_sha256": "973f72b895694ad5e01ad0b03bc1c8281445e531282318169b40071e02c5584f",
@@ -2313,15 +2241,6 @@
       "callsite_sha256": "db82dc6e904f801a28dc1f7cd334e63f419b23f97d6315f5034f50275caba463",
       "occurrence": 1,
       "reason": "Stage verification applies owner-only modes only to its run-unique transaction root, downloaded tarball, and completed review directory."
-    },
-    {
-      "file": "src/core/release/npm-stage-tarball-verifier.ts",
-      "symbol": "verifyNpmStageTarball",
-      "token": "renameSync",
-      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
-      "callsite_sha256": "082edba0ce6aefe68f2332145b7d3631c790cd6b24daa828784b5aae4c09f92d",
-      "occurrence": 1,
-      "reason": "Stage verification atomically promotes only its completed run-unique review directory to the requested output path."
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
@@ -2577,30 +2496,12 @@
     },
     {
       "file": "src/core/subagents/official-subagent-runner.ts",
-      "symbol": "removeHostCapabilityPendingRuntime.callback@309",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "bffc5cc5cba56964ade550e59844df6b07cd2bc22dfbbd77868781a576e9cc9f",
-      "callsite_sha256": "39d69a9e668a2214775bb6a2200b9991a5b73cbdc6da5f87d0c115639e3aab38",
-      "occurrence": 1,
-      "reason": "Failure and child-exit cleanup removes only the fixed mission-local host-capability pending file while holding its dedicated lock."
-    },
-    {
-      "file": "src/core/subagents/official-subagent-runner.ts",
       "symbol": "runOfficialSubagentWorkflow",
       "token": "fsp.rm",
-      "scope_contract_sha256": "70c62a1a8c10862a0068a46862672c3bdd722e397051aa0334adc7b6f199a8e8",
-      "callsite_sha256": "d681674b000359eb3df6d99902389ccefe5f3c137ec8f77e1aa347fa814d87f2",
+      "scope_contract_sha256": "e31deb47cc96c6e8ad38b8464d53a91a874dab5d655c7821fb73d4a9b4213bd2",
+      "callsite_sha256": "be6fa8119ff8c54e9dd9f419f6a1ed5c911485823614cf65ef564cc0f78f1947",
       "occurrence": 1,
       "reason": "The standalone parent runner removes only its run-unique temporary parent-summary file after reading it."
-    },
-    {
-      "file": "src/core/subagents/official-subagent-runner.ts",
-      "symbol": "writeHostCapabilityPendingRuntime.callback@285",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "9ebe668b0f40c4207af5be60da630f925290fd5b3584e81ee1cf5e504ac47dd8",
-      "callsite_sha256": "3cd56be33caed699ba36a87bf241c1aa8ed4510d9548765684c6d4eba68d6056",
-      "occurrence": 1,
-      "reason": "Pending-grant replacement removes only the fixed mission-local host-capability pending file while holding its dedicated lock."
     },
     {
       "file": "src/core/subagents/subagent-evidence.ts",
@@ -3649,20 +3550,20 @@
     {
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
-      "callsite_sha256": "5a0446360cfffaa07a98d1763ae970c20c42f41ee58494e009a37e2b2b676d2f",
-      "occurrence": 1,
-      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
-    },
-    {
-      "file": "src/scripts/canonical-test-runner.ts",
-      "symbol": "module",
       "token": "codex config write",
       "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
       "callsite_sha256": "ce6832a324b11c1a902c67ca38614834fb0b0a2cc606c39845a4be86084f420e",
       "occurrence": 1,
       "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME and fails on any unexpected tree change."
+    },
+    {
+      "file": "src/scripts/canonical-test-runner.ts",
+      "symbol": "module",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
+      "callsite_sha256": "5a0446360cfffaa07a98d1763ae970c20c42f41ee58494e009a37e2b2b676d2f",
+      "occurrence": 1,
+      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
     },
     {
       "file": "src/scripts/canonical-test-runner.ts",
@@ -5042,15 +4943,6 @@
       "reason": "src/scripts/evidence-fixture-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/evidence-flagship-coverage-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "ed581ce52ae8c98f5c220003026f30d7db64620a6ffff2348c3ba77457708e8d",
-      "callsite_sha256": "9d9b247ad11350463927b7922e137b6e868f29d16ebacc161eaf112196cde76f",
-      "occurrence": 1,
-      "reason": "src/scripts/evidence-flagship-coverage-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
       "file": "src/scripts/fast-codex-service-tier-proof-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
@@ -5076,96 +4968,6 @@
       "callsite_sha256": "5560c4474a4f7092d9b765d48452fe84177dfa2287e0ca12806e3211013d1a73",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v2-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "8dd6b6a9e632ab6a6aa3da2b286354fc6daeb3487ced43c783a04f38f09ad687",
-      "callsite_sha256": "1f80656e8c3f94ff512741ebce547e0dc70cb3887a0e71ae46eddfebc44009f6",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v2-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v2-check.ts",
-      "symbol": "refreshDependencyReports",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "62e6bc980ddce64421ae9a15c4971f83eebd9aca1ca55ee1724539397477bd68",
-      "callsite_sha256": "dc4eceeaab4a09294d88e85d20836fa9bafcd2a01fe6b1e7cd6c8dd958b8a70d",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v2-check.ts#refreshDependencyReports writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fe14a0fc68a0266c2281967d6c200543742e04aa93c878deebb897d20e19c4a8",
-      "callsite_sha256": "151cd721d1f55a12d0bc822c32fbbd121d8e8e275bb728e51b747dd66984d970",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v3-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fe14a0fc68a0266c2281967d6c200543742e04aa93c878deebb897d20e19c4a8",
-      "callsite_sha256": "c0c3517f4444b99283ef8a0db63d1de743d9865639a1d843e056e0ba9fbb1d31",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v3-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fe14a0fc68a0266c2281967d6c200543742e04aa93c878deebb897d20e19c4a8",
-      "callsite_sha256": "151cd721d1f55a12d0bc822c32fbbd121d8e8e275bb728e51b747dd66984d970",
-      "occurrence": 2,
-      "reason": "src/scripts/flagship-proof-graph-v3-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fe14a0fc68a0266c2281967d6c200543742e04aa93c878deebb897d20e19c4a8",
-      "callsite_sha256": "151cd721d1f55a12d0bc822c32fbbd121d8e8e275bb728e51b747dd66984d970",
-      "occurrence": 3,
-      "reason": "src/scripts/flagship-proof-graph-v3-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fe14a0fc68a0266c2281967d6c200543742e04aa93c878deebb897d20e19c4a8",
-      "callsite_sha256": "151cd721d1f55a12d0bc822c32fbbd121d8e8e275bb728e51b747dd66984d970",
-      "occurrence": 4,
-      "reason": "src/scripts/flagship-proof-graph-v3-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v4-check.ts",
-      "symbol": "fail",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "44962f2a5f2015aeb938f9fd9283fb168ca1ffbdcd799afc82a3ca301040b87d",
-      "callsite_sha256": "a2149e3ec63701ec69ac8f9baff185932f05c47803b59ac93ccf673207249f3d",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v4-check.ts#fail writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v4-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "0288f988d82c2a554e6b29ae037dbcfc5cf6cf832e5ff2a5b132c2b2e1d00b37",
-      "callsite_sha256": "13eb0c290f0fada88f4226f88bfe56d27407c7c312c0c60c6d195cfe7c0f716e",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v4-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/flagship-proof-graph-v4-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "0288f988d82c2a554e6b29ae037dbcfc5cf6cf832e5ff2a5b132c2b2e1d00b37",
-      "callsite_sha256": "91ed31b232f315917b022c9ca63753f9e1df886531a9f2a5d4e733120541140b",
-      "occurrence": 1,
-      "reason": "src/scripts/flagship-proof-graph-v4-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
       "file": "src/scripts/gate-pack-runner-blackbox.ts",
@@ -5762,42 +5564,6 @@
       "reason": "src/scripts/lib/mad-sks-actual-executor-check-lib.ts#writeReport writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/lib/real-codex-parallel-proof-fixture.ts",
-      "symbol": "buildFixtureProof",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a30bd029cb63626351b8e6487c42e964cc2490606517e6449f64f3497d70e6e8",
-      "callsite_sha256": "16f47db21ad4e260d2a029a58a380cd3be283bd16b3afc3c1a7bf6f427ea8acb",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/lib/real-codex-parallel-proof-fixture.ts",
-      "symbol": "buildFixtureProof",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a30bd029cb63626351b8e6487c42e964cc2490606517e6449f64f3497d70e6e8",
-      "callsite_sha256": "4d3ef14498efebbbfc18d0f0bbdad5aec5d22c90a2f8bc6a2c20b53b55c98ee0",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/lib/real-codex-parallel-proof-fixture.ts",
-      "symbol": "buildFixtureProof",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a30bd029cb63626351b8e6487c42e964cc2490606517e6449f64f3497d70e6e8",
-      "callsite_sha256": "57e13779e618bc9e368eaed08eb93d1963ff90dab83d4f6cbb45dcfe8d89151d",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/lib/real-codex-parallel-proof-fixture.ts",
-      "symbol": "buildFixtureProof",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a30bd029cb63626351b8e6487c42e964cc2490606517e6449f64f3497d70e6e8",
-      "callsite_sha256": "a9035147a6a90b1cc98c89cc9089a103c3334eda3bf735e267e0d68b37b4431c",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/scripts/lib/valid-png-fixture.ts",
       "symbol": "writeValidPngFixture",
       "token": "writeFileSync",
@@ -6239,15 +6005,6 @@
       "reason": "src/scripts/packlist-performance-check.ts#runNpmPack writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/parallel-production-smoke-check.ts",
-      "symbol": "module",
-      "token": "fsp.writeFile",
-      "scope_contract_sha256": "ae36e413ed929e2a3c68a9d724a90bc372eabfbcd71f000e167ff8ebb6d7ea80",
-      "callsite_sha256": "b54a68f09a7397243ffc9dab624ee7d384a157a45d1a258b38d22add1341e4fd",
-      "occurrence": 1,
-      "reason": "src/scripts/parallel-production-smoke-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
       "file": "src/scripts/patch-handoff-gate-lib.ts",
       "symbol": "makeTempPatchProject",
       "token": "writeFileSync",
@@ -6590,15 +6347,6 @@
       "reason": "Release cache fixture gate writes only inside a fresh os.tmpdir mkdtemp fixture root to compare version-neutral cache keys."
     },
     {
-      "file": "src/scripts/release-check-dynamic.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "945517ffcd45992b6ccb2e8612366a6b1c071ead9f3b12eaeab047c14df48100",
-      "callsite_sha256": "bb66f6daf966924ac62284d19da28cdba2704092adda7b25b31d61ee8a8a5572",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/scripts/release-check-stamp.ts",
       "symbol": "writeStamp",
       "token": "writeFileSync",
@@ -6608,29 +6356,11 @@
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
     {
-      "file": "src/scripts/release-dynamic-performance-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "11ece8470149e8f6f8148e5d99b1c940c461c5e06378fe5b958666ee118f6e4c",
-      "callsite_sha256": "5efe2d22089a85334315fe6fd3753cc315d3286264844db58a280459245c88d6",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/release-gate-budget-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "b5124a14c1411aebbc00ecf20e825a7bb2f4c549b475232f0f3b5f85c99dce94",
-      "callsite_sha256": "3673f41dff7cf777a26225f578bd7abd850672eb200b74e360e3c838b60b7783",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "65cff70e30d50604148f0d7b8cb34ac9ffa232dcacb16d582ac6e5a56ff99e79",
-      "callsite_sha256": "0a9c2453e179b76bd7bb864877c0a8da1a0c863df8fd9d1c7ec12d9c2c891419",
+      "scope_contract_sha256": "9f0e578b0034960f3be338923c8801420fa537b02fada2d3b94d5861eaf484e1",
+      "callsite_sha256": "ec41fde835430295decee0ba5f5e5393433d2100a76e237823bd93ddecf9d89e",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },
@@ -7241,8 +6971,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "module",
       "token": "rmSync",
-      "scope_contract_sha256": "0c3b2aa3b419971c74399ce89bb2df385ceb24b9598386946865efa413b723d3",
-      "callsite_sha256": "0dabf5b9a9e16065be8f7ba42456cbc6b4bc2cefdcb6240fbaaee9222b828062",
+      "scope_contract_sha256": "c8d340cad02ff96c1fde7072652d98402923b6a8ee7ba7183b5a6e2ee212053b",
+      "callsite_sha256": "783fb7338ca65b548acbb621cd96a4a7f4c6955d38d4eef883d8c680939c12d8",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#module removes only its isolated fixture, generated build output, or scoped temporary artifact during cleanup."
     },
@@ -7250,8 +6980,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "0c3b2aa3b419971c74399ce89bb2df385ceb24b9598386946865efa413b723d3",
-      "callsite_sha256": "b365652bb519de47b7d79016ece34c7f62406f81c77118e55a6f113037ba48c9",
+      "scope_contract_sha256": "c8d340cad02ff96c1fde7072652d98402923b6a8ee7ba7183b5a6e2ee212053b",
+      "callsite_sha256": "86cf4836dfdcd7e0f72bf9e824ccc7061810be18606c8a7b2ef4a1cfb0e5350c",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7259,8 +6989,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "3e484e8fcb2cdb038c8e0afa1affa4a69a39c5d40d22f829d181b62347dad165",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "35f917f4ed56a50167e729a6ed09af2b11c25c0c5a60cdddb5dc33715b6edc3f",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7268,8 +6998,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "40a90800da6399e3fd51449dedfabcf7b0a4ddc7081dbb9e58407fd778a56adf",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "96e062269928262624254227636f5151f3a736945d041eeea81a2a01f82312ad",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7277,8 +7007,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "4dd17fef711a60641e1998fceb641cd8355bed21015f165c543f75609cd78cd0",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "a7ce96aea7777e1ad7a2479496c1b62fc080e16dafae4ad48613406c30259acb",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7286,8 +7016,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "4eb80f96cf69db28d1d1a01414a5e7ad12fc2d8e9ed3fa07f52a2b23bc11fc26",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "5a71280d204805b2a9e253e1b4cca1f6812e09e21437f5775e4ede6c702141c3",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7295,8 +7025,17 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "66d19cda26969ac1da2ada08ef26400733d1d2dff0abca4c5a5d943af4fe7035",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "6fb6925438949ce8085d2ed6cd57d0841ea124741336d33311991f5c115e4bc1",
+      "occurrence": 1,
+      "reason": "SEO truthfulness verification writes this minimal source file only inside its mkdtemp fixture root to exercise the real source-policy scan."
+    },
+    {
+      "file": "src/scripts/seo-marketing-truthfulness-check.ts",
+      "symbol": "seedFixture",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "a1db43935dd120f0a1a49f26968f5b855361f294ce6c7b06e6b7b353446cac84",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7304,8 +7043,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "97550d44f7f2728d02e5f4561713ae63bc1d09b9ec0e826e448ad5a8a41fb8db",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "06242cc6e8d7886031a852ad5009a4f89533b3d1ff5d4ffe41c2a131d73c38ac",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7313,17 +7052,8 @@
       "file": "src/scripts/seo-marketing-truthfulness-check.ts",
       "symbol": "seedFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "a819f32fae46010fe06318d0b8efbcb75163a392a5a45c0f75a4ba2cd046b863",
-      "occurrence": 1,
-      "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/seo-marketing-truthfulness-check.ts",
-      "symbol": "seedFixture",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "5e17d43f8bcbd09466f421b6fbf748de176045e541df9e3d5dd8787b53d0629b",
-      "callsite_sha256": "bf8dba998529c8a54b54a0c7dd24d216098a052bf9ed78f8b18005fc83fdff89",
+      "scope_contract_sha256": "7a0a350bfe460b24e8a04142239094e85683cef949e7dc01b53d3aeedf1b0879",
+      "callsite_sha256": "a6fb4bb9d125599c5fd4e3147e106cc45428f3ce962d8bc9b4bfc0c37e08ed61",
       "occurrence": 1,
       "reason": "src/scripts/seo-marketing-truthfulness-check.ts#seedFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7967,15 +7697,6 @@
       "reason": "Quality-mode gate disposes the mkdtemp workspace it materialized for the hermetic measurement; nothing outside that root is reachable."
     },
     {
-      "file": "src/scripts/release-check-dynamic-execute.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "a7e1861e0ea3ef1fa8421c81794114a1134f56671cef595685b10e57e44b4c94",
-      "callsite_sha256": "84c567c47ae9d52da5fe9109886f34c1634c3a3779dc5efea9f7aa7da4a6f7ca",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/core/verification-profile.ts",
       "symbol": "writeVerificationProfile",
       "token": "writeFileSync",
@@ -7983,6 +7704,33 @@
       "callsite_sha256": "428bde825e815ee3319822c310e7edb9fbfb95e0db74d48a0a5794c9a658a0f1",
       "occurrence": 1,
       "reason": "The verification-profile writer creates only the SKS-owned verification-profile.json under the project .sneakoscope directory or the global root, with a fixed schema payload the user asked to set; it never touches user-authored files."
+    },
+    {
+      "file": "src/core/subagents/official-subagent-runner.ts",
+      "symbol": "removeHostCapabilityPendingRuntime.callback@320",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "bffc5cc5cba56964ade550e59844df6b07cd2bc22dfbbd77868781a576e9cc9f",
+      "callsite_sha256": "dc562d030be77306d3e5c8aacd89e97318bcb4c68afad468bac509b46a0cd523",
+      "occurrence": 1,
+      "reason": "The locked runtime cleanup removes only the fixed pending-runtime file inside the caller-supplied mission directory."
+    },
+    {
+      "file": "src/core/subagents/official-subagent-runner.ts",
+      "symbol": "writeHostCapabilityPendingRuntime.callback@296",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "9ebe668b0f40c4207af5be60da630f925290fd5b3584e81ee1cf5e504ac47dd8",
+      "callsite_sha256": "986b6882c44ce7222b9572c40ba08e1b793bafa2bfc71e4cc886b7ac80ac37a5",
+      "occurrence": 1,
+      "reason": "The locked pending-runtime writer removes only its fixed mission-local stale runtime file immediately before atomic replacement."
+    },
+    {
+      "file": "src/core/update/update-migration-state.ts",
+      "symbol": "runPackageLocalDoctor",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "9166ab6117f4cc8f58abda3a828e1435d5d5a81d57ffa085a6c083db36a40c15",
+      "callsite_sha256": "a8552dabfa1d646a11e532401d9b39de93d3f22cd7ae89cedec44f3bd1a7425e",
+      "occurrence": 1,
+      "reason": "The updater removes only its caller-selected, stable doctor report file before spawning that doctor, so a prior success cannot authorize the current run; removal is non-recursive and does not follow symlinks."
     }
   ]
 }

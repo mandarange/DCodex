@@ -39,7 +39,7 @@ test('legacy runtime data GC keeps the newest config backups and removes the res
       'config.toml.pre-session-restore-20260728-233430.bak'
     ];
     for (const [index, name] of names.entries()) {
-      await writeAged(path.join(codexHome, name), (index + 1) * 60, '# backup\n');
+      await writeAged(path.join(codexHome, name), (index + 1) * 60, '# SKS-MANAGED-CODEX-CONFIG\n');
     }
     // The live config and non-backup files are never candidates.
     await fsp.writeFile(path.join(codexHome, 'config.toml'), 'model = "gpt-5.6-sol"\n');
@@ -146,6 +146,25 @@ test('legacy runtime data GC is inert on a machine with nothing to clean', async
     for (const category of [report.config_backups, report.bridge_generations, report.retired_version_caches, report.retired_singletons]) {
       assert.deepEqual(category, { detected: 0, removed: 0, kept: 0, remaining: 0, errors: [] });
     }
+  } finally {
+    await fsp.rm(home, { recursive: true, force: true });
+  }
+});
+
+
+test('legacy runtime cleanup preserves unmarked user config backups regardless of age and backup filename', async () => {
+  const { home, codexHome } = await fixture();
+  try {
+    const userNames = ['config.toml.personal.bak', 'config.toml.bak', 'config.toml.backup-2020-01-01'];
+    const content = 'model = "custom-provider/model"\n[model_providers.personal]\nenv_key = "MY_PERSONAL_API_KEY"\n';
+    for (const name of userNames) await writeAged(path.join(codexHome, name), 100_000, content);
+    for (let index = 0; index < 5; index++) {
+      await writeAged(path.join(codexHome, `config.toml.backup-managed-${index}`), index + 1, '# SKS-MANAGED-CODEX-CONFIG\n');
+    }
+    const result = await reconcileLegacyRuntimeData({ codexHome, stateRoots: [], fix: true });
+    assert.equal(result.ok, true);
+    assert.equal(result.config_backups.removed, 2);
+    for (const name of userNames) assert.equal(await fsp.readFile(path.join(codexHome, name), 'utf8'), content);
   } finally {
     await fsp.rm(home, { recursive: true, force: true });
   }

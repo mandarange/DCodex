@@ -703,3 +703,24 @@ test('R39/R40/R49: deep controller path runs active-provider probes and validate
   ]);
   assert.ok(missing.every((result) => result.blockers.length === 0));
 });
+
+
+test('authentication priority may be saved without a credential and reports unavailable without installation', async (t) => {
+  const setup = await fixture(t);
+  let installs = 0;
+  const options = {
+    home: setup.home, env: setup.env,
+    serviceStatusImpl: async () => stoppedService(setup.home),
+    installServiceImpl: async () => { installs += 1; return stoppedService(setup.home); },
+  };
+  for (const enabled of [true, false]) {
+    const result = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled }, options);
+    assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+    if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const status = await desktopBridgeStatusV3(options);
+    assert.equal(status.auth_priority?.enabled, enabled);
+    assert.equal(status.auth_priority?.state, enabled ? 'unavailable' : 'off');
+    assert.equal(installs, 0);
+  }
+});

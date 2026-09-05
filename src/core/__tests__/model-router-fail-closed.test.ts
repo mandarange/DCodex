@@ -2,14 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { modelRouteReason, routeNarutoGpt56Model } from '../provider/model-router.js'
 
-const models = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']
+const models = ['gpt-5.6-luna', 'gpt-6-astra']
 const modelEfforts = {
   'gpt-5.6-luna': ['xhigh', 'max'],
-  'gpt-5.6-terra': ['max'],
-  'gpt-5.6-sol': ['high', 'xhigh', 'max', 'ultra']
+  'gpt-6-astra': ['medium', 'high', 'xhigh', 'max', 'ultra']
 }
 
-test('Naruto GPT-5.6 routing fails closed for an explicit model outside the family', () => {
+test('Naruto Luna/Astra routing fails closed for an explicit model outside the family', () => {
   const choice = routeNarutoGpt56Model({
     taskText: 'implementation',
     explicitModel: 'gpt-5.4',
@@ -21,7 +20,7 @@ test('Naruto GPT-5.6 routing fails closed for an explicit model outside the fami
   assert.equal(modelRouteReason('agentic', choice, { explicit: true }), 'agentic->blocked (explicit model unavailable)')
 })
 
-test('Naruto GPT-5.6 routing preserves a supported explicit family model', () => {
+test('Naruto Luna/Astra routing preserves a supported explicit family model', () => {
   const choice = routeNarutoGpt56Model({
     taskText: 'implementation',
     explicitModel: 'GPT-5.6-LUNA',
@@ -33,29 +32,40 @@ test('Naruto GPT-5.6 routing preserves a supported explicit family model', () =>
   assert.equal(modelRouteReason('agentic', choice, { explicit: true }), 'agentic->gpt-5.6-luna (explicit model preserved)')
 })
 
-test('Naruto GPT-5.6 routing preserves Terra Max and auto-selects it for tool work', () => {
-  const choice = routeNarutoGpt56Model({
-    taskText: 'implementation',
-    explicitModel: 'gpt-5.6-terra',
-    availableModels: models,
-    availableModelEfforts: modelEfforts
-  })
-
-  assert.deepEqual(choice, { model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast' })
-  assert.deepEqual(routeNarutoGpt56Model({ taskText: 'browser QA' }), {
-    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
-  })
-  assert.deepEqual(routeNarutoGpt56Model({ taskText: 'implementation' }), {
-    model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
-  })
+test('explicit Astra uses the task-specific medium, high, and max effort profiles', () => {
+  for (const [taskText, reasoning] of [
+    ['browser QA', 'medium'],
+    ['implementation', 'high'],
+    ['security review', 'max']
+  ] as const) {
+    const expected = { model: 'gpt-6-astra', reasoning, serviceTier: 'fast' }
+    assert.deepEqual(routeNarutoGpt56Model({
+      taskText,
+      explicitModel: 'GPT-6-ASTRA',
+      availableModels: models,
+      availableModelEfforts: modelEfforts
+    }), expected)
+    assert.deepEqual(routeNarutoGpt56Model({ taskText }), expected)
+  }
 })
 
-test('Naruto GPT-5.6 routing rejects an unavailable model/effort pair without fallback', () => {
+test('legacy managed Sol and Terra are rejected as explicit child routing overrides', () => {
+  for (const explicitModel of ['gpt-5.6-sol', 'gpt-5.6-terra']) {
+    assert.equal(routeNarutoGpt56Model({
+      taskText: 'implementation',
+      explicitModel,
+      availableModels: [...models, explicitModel],
+      availableModelEfforts: { ...modelEfforts, [explicitModel]: ['medium', 'high', 'max'] }
+    }).model, '')
+  }
+})
+
+test('Naruto Luna/Astra routing rejects an unavailable model/effort pair without fallback', () => {
   const choice = routeNarutoGpt56Model({
     taskText: 'browser QA',
     availableModels: models,
-    availableModelEfforts: { ...modelEfforts, 'gpt-5.6-terra': ['medium'] }
+    availableModelEfforts: { ...modelEfforts, 'gpt-6-astra': ['max'] }
   })
   assert.equal(choice.model, '')
-  assert.equal(choice.reasoning, 'max')
+  assert.equal(choice.reasoning, 'medium')
 })

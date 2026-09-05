@@ -148,7 +148,7 @@ struct StatusEnvelopeHarness {
 }
 `);
     const truth = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersRoutingTruth.swift');
-    const compiled = spawnSync('swiftc', [truth, harness, '-o', binary], { encoding: 'utf8' });
+    const compiled = spawnSync('swiftc', [path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AuthPriorityState.swift'), truth, harness, '-o', binary], { encoding: 'utf8' });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const executed = spawnSync(binary, [], { encoding: 'utf8' });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);
@@ -223,7 +223,7 @@ struct ProviderTruthHarness {
 }
 `);
     const truth = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersRoutingTruth.swift');
-    const compiled = spawnSync('swiftc', [truth, harness, '-o', binary], { encoding: 'utf8' });
+    const compiled = spawnSync('swiftc', [path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AuthPriorityState.swift'), truth, harness, '-o', binary], { encoding: 'utf8' });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const executed = spawnSync(binary, [], { encoding: 'utf8' });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);

@@ -88,7 +88,7 @@ test('generated Naruto skill keeps official threads lightweight and TriWiki-boun
   await installSkills(root);
 
   const naruto = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-naruto', 'SKILL.md'), 'utf8');
-  assert.match(naruto, /Automatic targets begin at 4\/6\/8\/16 by task size: bounded, explicit parallel, large-scale, then mass cheap-model fan-out on the Luna\/Terra lanes/i);
+  assert.match(naruto, /Automatic targets begin at 4\/6\/8\/16 by task size: bounded, explicit parallel, large-scale, then mass mechanical or exploration fan-out on the Luna\/Astra Medium lanes/i);
   assert.match(naruto, /both lanes may expand to the SKS-owned 256-child ceiling/i);
   assert.match(naruto, /max_threads defaults to a 256-child frame budget cap, never a target/i);
   assert.match(naruto, /measured lower Codex host cap or explicit provider\/API budget remains authoritative/i);
@@ -107,6 +107,8 @@ test('generated pipeline skills reference the single core directive without lega
     assert.equal(content.match(/Core Engineering Directive/g)?.length, 1, name);
     assert.match(content, /from AGENTS\.md exactly/, name);
     assert.doesNotMatch(content, /lean_decision|sks\.lean-decision|sks-lean:/i, name);
+    assert.doesNotMatch(content, /general code-changing work uses Naruto|sks pipeline answer/, name);
+    assert.equal(content.includes('Codex App pipeline activation:'), name === 'sks-pipeline-runner');
   }
 });
 
@@ -117,9 +119,10 @@ test('generated Research skill absorbs discovery behavior without a duplicate pi
   const content = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-research', 'SKILL.md'), 'utf8');
   assert.match(content, /Frame the research criteria and map assumptions/i);
   assert.match(content, /three independent official .*research_reviewer/i);
-  assert.match(content, /GPT-5\.6 Sol Max/i);
-  assert.match(content, /one literal "Eureka!" idea/i);
-  assert.match(content, /Do not overclaim genius, novelty, breakthrough, publication acceptance/i);
+  assert.match(content, /evidence integrity, method validity, and falsification or replication/i);
+  assert.match(content, /source ids, falsifiers, and cheap probes/i);
+  assert.match(content, /Critical, major, or required revisions/i);
+  assert.doesNotMatch(content, /Eureka|Einstein|von Neumann|genius/i);
   assert.doesNotMatch(content, /Feynman Agent|Turing Agent|five-agent|effort=xhigh|repeat agent\/debate/i);
   await assert.rejects(fs.access(path.join(root, '.agents', 'skills', 'sks-research-discovery')));
 });

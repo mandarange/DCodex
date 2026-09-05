@@ -90,11 +90,12 @@ function seedFixture(dir) {
   fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), '# Changelog\n\n## Fixture\n\n- Source-backed release evidence.\n')
   fs.mkdirSync(path.join(dir, 'src/core'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src/core/routes.ts'), 'export const ROUTES = []\n')
+  fs.mkdirSync(path.join(dir, 'src/core/agents'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'src/core/agents/agent-orchestrator.ts'), 'export async function runNativeAgentOrchestrator() {}\n')
   fs.mkdirSync(path.join(dir, 'src/cli'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src/cli/command-manifest-lite.ts'), 'export const COMMAND_MANIFEST_LITE = []\n')
   fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'config/perf-budgets.v1.json'), '{"schema":"sks.perf-budgets.v1","commands":[]}\n')
   fs.mkdirSync(path.join(dir, '.sneakoscope/reports'), { recursive: true })
-  fs.writeFileSync(path.join(dir, '.sneakoscope/reports/parallel-production-smoke.json'), '{"ok":true,"changed_files":["src/core/routes.ts"]}\n')
   fs.writeFileSync(path.join(dir, '.sneakoscope/reports/super-search-local-http-smoke.json'), '{"ok":true,"verified_content":true}\n')
 }

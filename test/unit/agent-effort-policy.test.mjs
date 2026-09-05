@@ -125,10 +125,10 @@ test('official subagents use the fixed four-profile matrix', () => {
   const review = decideOfficialSubagentModel({ persona: { role: 'ux' }, prompt: 'review the UI' });
   assert.equal(bounded.model, 'gpt-5.6-luna');
   assert.equal(bounded.model_reasoning_effort, 'max');
-  assert.equal(implementation.model, 'gpt-5.6-sol');
+  assert.equal(implementation.model, 'gpt-6-astra');
   assert.equal(implementation.model_reasoning_effort, 'high');
-  assert.equal(context.model, 'gpt-5.6-terra');
-  assert.equal(context.model_reasoning_effort, 'max');
-  assert.equal(review.model, 'gpt-5.6-sol');
+  assert.equal(context.model, 'gpt-6-astra');
+  assert.equal(context.model_reasoning_effort, 'medium');
+  assert.equal(review.model, 'gpt-6-astra');
   assert.equal(review.model_reasoning_effort, 'max');
 });

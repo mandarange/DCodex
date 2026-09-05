@@ -264,11 +264,7 @@ test('an unpinned websocket upgrade passes through to the official upstream with
   }
 });
 
-test('a thread pinned to the gateway before the flip is absorbed into official passthrough', async () => {
-  // The operator's machine carries hundreds of provider session pins from the
-  // pre-flip era. After bare official ids move to `openai`, a pinned thread's
-  // resolver throws session_pin_route_unavailable — which must resolve to
-  // official passthrough, not a dead thread.
+test('an unavailable gateway pin fails without changing account after a route flip', async () => {
   const official = recordingUpstream();
   const provider = recordingUpstream();
   const officialPort = await listen(official.server);
@@ -283,9 +279,9 @@ test('a thread pinned to the gateway before the flip is absorbed into official p
     }];
     bridge = await startDesktopBridge(config, { writeState: false });
     const result = await postJson(bridgePort, '/backend-api/codex/responses', { model: OFFICIAL_MODEL, input: 'hi' }, { 'thread-id': 'thread-legacy-1' });
-    assert.equal(result.status, 200);
-    assert.equal(official.seen.length, 1);
-    assert.equal(official.seen[0]!.authorization, CLIENT_OAUTH);
+    assert.equal(result.status, 400);
+    assert.match(result.body, /session_pin_route_unavailable/);
+    assert.equal(official.seen.length, 0);
     assert.equal(provider.seen.length, 0);
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
@@ -309,5 +305,35 @@ test('without official passthrough the legacy fail-closed behavior is unchanged'
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
     await close(provider.server);
+  }
+});
+
+
+test('a valid qualified gateway twin keeps a pinned thread on its account after priority is switched off', async () => {
+  const official = recordingUpstream();
+  const provider = recordingUpstream();
+  const officialPort = await listen(official.server);
+  const providerPort = await listen(provider.server);
+  const bridgePort = await freePort();
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    const config = bridgeConfig(bridgePort, providerPort, officialPort, { officialModelRoute: true });
+    config.routePolicy!.model_routes[`codex-lb:${OFFICIAL_MODEL}`] = { provider_id: 'codex-lb', upstream_model: OFFICIAL_MODEL };
+    config.providerSessionPins = [{
+      thread_id: 'thread-priority', provider_id: 'codex-lb', public_model: OFFICIAL_MODEL, upstream_model: OFFICIAL_MODEL,
+      catalog_generation: 'catalog-generation', route_policy_generation: 'old-policy', created_at: '2026-08-01T00:00:00.000Z',
+    }];
+    bridge = await startDesktopBridge(config, { writeState: false });
+    const result = await postJson(bridgePort, '/backend-api/codex/responses', { model: OFFICIAL_MODEL, input: 'hi' }, { 'thread-id': 'thread-priority' });
+    assert.equal(result.status, 200, result.body);
+    assert.equal(official.seen.length, 0);
+    assert.equal(provider.seen.length, 1);
+    assert.equal(provider.seen[0]!.codexLbKey, 'provider-secret-key');
+    const fresh = await postJson(bridgePort, '/backend-api/codex/responses', { model: OFFICIAL_MODEL, input: 'hi' }, { 'thread-id': 'thread-fresh' });
+    assert.equal(fresh.status, 200);
+    assert.equal(official.seen.length, 1);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(official.server); await close(provider.server);
   }
 });

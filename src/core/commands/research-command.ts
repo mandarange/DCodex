@@ -5,7 +5,7 @@ import { printJson } from '../../cli/output.js';
 import { appendJsonlBounded, exists, nowIso, readJson, readText, runProcess, sksRoot, writeJsonAtomic } from '../fsx.js';
 import { initProject } from '../init.js';
 import { createMission, findLatestMission, loadMission, setCurrent, stateFile } from '../mission.js';
-import { RESEARCH_AGENT_COUNCIL, RESEARCH_GENIUS_SUMMARY_ARTIFACT, RESEARCH_REVIEWER_CUSTOM_AGENT, RESEARCH_SOURCE_SKILL_ARTIFACT, countGeniusOpinionSummaries, countResearchPaperSections, evaluateResearchGate, findResearchPaperArtifact, researchPaperArtifactForPlan, writeResearchPlan } from '../research.js';
+import { RESEARCH_AGENT_COUNCIL, RESEARCH_SOURCE_SKILL_ARTIFACT, countResearchPaperSections, evaluateResearchGate, findResearchPaperArtifact, researchPaperArtifactForPlan, writeResearchPlan } from '../research.js';
 import { ROUTES, reflectionRequiredForRoute, routeNeedsContext7, routePrompt, routeReasoning } from '../routes.js';
 import { PIPELINE_PLAN_ARTIFACT, validatePipelinePlan, writePipelinePlan } from '../pipeline.js';
 import { enforceRetention } from '../retention.js';
@@ -382,11 +382,8 @@ async function researchStatus(args: any) {
   if (!flag(args, '--json')) console.log(gateVerdict.verdict);
   const ledger = await readJson(path.join(dir, 'novelty-ledger.json'), null);
   const sourceLedger = await readJson(path.join(dir, 'source-ledger.json'), null);
-  const agentLedger = await readJson(path.join(dir, 'agent-ledger.json'), null);
-  const debateLedger = await readJson(path.join(dir, 'debate-ledger.json'), null);
   const falsificationLedger = await readJson(path.join(dir, 'falsification-ledger.json'), null);
   const sourceSkillText = await readText(path.join(dir, RESEARCH_SOURCE_SKILL_ARTIFACT), '');
-  const geniusSummaryText = await readText(path.join(dir, RESEARCH_GENIUS_SUMMARY_ARTIFACT), '');
   const plan = await readJson(path.join(dir, 'research-plan.json'), null);
   const officialSubagentPlan = await readJson(path.join(dir, RESEARCH_ADVERSARIAL_PLAN_ARTIFACT), null);
   const adversarialReview = await readJson(path.join(dir, RESEARCH_ADVERSARIAL_REVIEW_ARTIFACT), null);
@@ -395,7 +392,6 @@ async function researchStatus(args: any) {
   const honestMode = await readJson(path.join(dir, RESEARCH_HONEST_MODE_ARTIFACT), null);
   const paperArtifact = await findResearchPaperArtifact(dir, plan);
   const paperText = paperArtifact.exists ? await readText(paperArtifact.path, '') : '';
-  const agentRows = Array.isArray(agentLedger?.agents) ? agentLedger.agents : [];
   const sourceLayerRows = Array.isArray(sourceLedger?.source_layers) ? sourceLedger.source_layers : [];
   const sourceLayersCovered = sourceLayerRows.filter((layer: any) => layer.status === 'covered' && ((Array.isArray(layer.source_ids) && layer.source_ids.length) || (Array.isArray(layer.counterevidence_ids) && layer.counterevidence_ids.length))).length;
   const qualityContract = await readResearchQualityContract(dir);
@@ -425,20 +421,9 @@ async function researchStatus(args: any) {
     source_layers_required: sourceLayerRows.length || gate?.metrics?.source_layers_required || gate?.source_layers_required || null,
     source_layers_covered: gate?.metrics?.source_layers_covered ?? gate?.source_layers_covered ?? (sourceLayerRows.length ? sourceLayersCovered : null),
     triangulation_checks: sourceLedger?.triangulation?.cross_layer_checks?.length ?? gate?.metrics?.triangulation_checks ?? gate?.triangulation_checks ?? null,
-    genius_opinion_summaries: gate?.metrics?.genius_opinion_summaries ?? gate?.genius_opinion_summaries ?? (geniusSummaryText.trim() ? countGeniusOpinionSummaries(geniusSummaryText) : null),
     counterevidence_sources: sourceLedger?.counterevidence_sources?.length ?? null,
     xhigh_agents: 0,
-    sol_max_policy_agents: agentRows.length ? agentRows.filter((agent: any) => {
-      const policy = agent?.model_policy && typeof agent.model_policy === 'object' ? agent.model_policy : agent;
-      return policy.custom_agent === RESEARCH_REVIEWER_CUSTOM_AGENT && policy.model === 'gpt-5.6-sol' && (policy.reasoning_effort === 'max' || policy.model_reasoning_effort === 'max');
-    }).length : null,
-    eureka_moments: agentRows.length ? agentRows.filter((agent: any) => agent.eureka?.exclamation === 'Eureka!' && String(agent.eureka?.idea || '').trim()).length : null,
-    agent_findings: agentRows.length ? agentRows.reduce((sum: any, agent: any) => sum + (Array.isArray(agent.findings) ? agent.findings.length : 0), 0) : null,
-    debate_exchanges: debateLedger?.exchanges?.length ?? null,
-    consensus_iterations: gate?.metrics?.consensus_iterations ?? gate?.consensus_iterations ?? debateLedger?.consensus_iterations ?? null,
-    unanimous_consensus: gate?.metrics?.unanimous_consensus ?? gate?.unanimous_consensus ?? debateLedger?.unanimous_consensus ?? false,
     research_source_skill_present: Boolean(sourceSkillText.trim()),
-    genius_opinion_summary_present: Boolean(geniusSummaryText.trim()),
     research_paper_artifact: paperArtifact.name,
     paper_present: Boolean(paperText.trim()),
     paper_sections: countResearchPaperSections(paperText),

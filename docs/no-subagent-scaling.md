@@ -6,17 +6,17 @@ or a custom active pool as Naruto completion evidence.
 
 The canonical policy is:
 
-- parent: GPT-5.6 Sol with `model_reasoning_effort="max"`
+- standalone parent: GPT-6 Astra with `model_reasoning_effort="max"`; active Codex tasks keep their selected model and effort
 - tiny short-context mechanical worker: GPT-5.6 Luna with `model_reasoning_effort="max"`
-- ordinary implementation: GPT-5.6 Sol with `model_reasoning_effort="high"`
+- ordinary implementation: GPT-6 Astra with `model_reasoning_effort="high"`
 - review, debugging, planning, architecture, security, database, research,
-  release, ambiguity, and judgment: GPT-5.6 Sol with `model_reasoning_effort="max"`
+  release, ambiguity, and judgment: GPT-6 Astra with `model_reasoning_effort="max"`
 - long-context, long-term memory, large documents/repository reads, rapid
   large-scale first-draft code processing, Computer Use, Browser/Chrome, and
-  image-generation execution: GPT-5.6 Terra with `model_reasoning_effort="max"`
+  image-generation execution: GPT-6 Astra with `model_reasoning_effort="medium"`
 - mixed work is split by execution versus judgment when possible; an
-  unsplittable mixed slice uses Sol Max
-- automatic requested children start at 4 for bounded non-trivial work, 6 for explicit parallel work, 8 for large-scale work, and 16 for mass Luna/Terra work; after decomposition either lane may expand to 256 only when ready DAG width, disjoint ownership, verifier/tool capacity, real host slots, and positive marginal usefulness all permit it
+  unsplittable mixed slice uses Astra Max
+- automatic requested children start at 4 for bounded non-trivial work, 6 for explicit parallel work, 8 for large-scale work, and 16 for mass mechanical or exploration work on the Luna/Astra Medium lanes; after decomposition either lane may expand to 256 only when ready DAG width, disjoint ownership, verifier/tool capacity, real host slots, and positive marginal usefulness all permit it
 - reviewer-only fan-out: at most 2 for ordinary work and 3 for critical multi-domain review
 - explicit `--agents N` and `--max-threads N` values from 1 through 256 remain authoritative when the operator supplies them
 - default `agents.max_concurrent_threads_per_session`: 256 child slots for fresh SKS-owned project config when Codex multi-agent V2 is available
@@ -43,7 +43,7 @@ naruto-gate.json
 
 The historical Naruto process runtime and its environment opt-in are removed.
 Legacy backend, scheduler, pool, and model flags fail closed. A standalone
-terminal invocation launches at most one Sol Max `codex exec` parent, and a
+terminal invocation launches at most one Astra Max `codex exec` parent, and a
 Codex App/Desktop invocation returns official delegation context to the current
 parent without nesting another Codex process.
 

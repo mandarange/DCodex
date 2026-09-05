@@ -1,12 +1,6 @@
 import Cocoa
 
 final class UpdatesViewController: NSViewController, ControlCenterPage {
-    private struct ReviewedUpdate {
-        let target: String
-        let registry: String
-        let projectRoot: String
-    }
-
     private static let controlCenterUpdateEnvironment = [
         "SKS_UPDATE_DEFER_MENUBAR_RESTART": "1",
         "SKS_SKIP_SKS_MENUBAR_LAUNCH": "1"
@@ -14,6 +8,11 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
     private let processClient: ProcessClient
     private let operations: OperationCoordinator
     private let notifications: NotificationCoordinator
+    private let snapshotSpinner = NativeView.spinner(label: "Checking for updates")
+    private var snapshotLoading = false
+    private let headline = NativeView.sectionTitle("Checking for updates…")
+    private var progressDetails: NativeDisclosure!
+    private var recoveryDetails: NativeDisclosure!
     private let status = NativeView.detail("Update status has not been checked yet.")
     private let codexUpdateStatus = NativeView.detail("Codex CLI update has not been run yet.")
     private let stageStatus = NativeView.detail("Update stages: no update receipt recorded yet.")
@@ -47,12 +46,16 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         codexUpdateStatus.setAccessibilityLabel("Codex CLI update result")
         let buttons = NSStackView(views: [checkButton, codexUpdateButton, reviewButton, progress])
         buttons.orientation = .horizontal; buttons.spacing = 8
+        headline.setAccessibilityIdentifier("sks-updates-headline")
+        codexUpdateStatus.isHidden = true
+        progressDetails = NativeDisclosure("Update progress", views: [stageStatus])
+        recoveryDetails = NativeDisclosure("Recovery details", views: [remediation])
+        progressDetails.isHidden = true
+        recoveryDetails.isHidden = true
         view = NativeView.page([
-            ControlKit.header("Updates", "SKS, Codex CLI, and Menu Bar status share one local snapshot. Prefer the latest Codex CLI; SKS stays version-agnostic and capability-gates features. Network refresh only runs on demand or after expiry."),
-            buttons,
-            NativeView.card(title: "Status", subtitle: "Versions from the shared local snapshot.", views: [status, codexUpdateStatus]),
-            NativeView.card(title: "Progress", subtitle: "Authoritative stage checklist from the update receipt.", views: [stageStatus]),
-            NativeView.card(title: "Recovery", subtitle: "Rollback guidance and the previous Menu Bar app remain available if final verification fails. The update receipt records the exact recovery command and stage state.", views: [remediation])
+            ControlKit.header("Updates", "Keep SKS and Codex CLI current."),
+            NativeView.card(title: "Software updates", subtitle: "", views: [NativeView.row([headline, snapshotSpinner]), status, buttons, codexUpdateStatus]),
+            progressDetails, recoveryDetails
         ])
     }
 
@@ -121,7 +124,7 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         _ args: [String],
         kind: String,
         group: String?,
-        reviewedUpdate: ReviewedUpdate? = nil,
+        reviewedUpdate: ReviewedSoftwareUpdate? = nil,
         completion: ((ProcessResult) -> Void)? = nil
     ) {
         if kind == "update", reviewedUpdate == nil {
@@ -157,7 +160,12 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         }
         status.stringValue = "\(kind.replacingOccurrences(of: "-", with: " ").capitalized)…"
         _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
-        if kind == "update" { startReceiptPolling(for: operation) }
+        headline.stringValue = status.stringValue
+        if kind == "update" {
+            progressDetails.isHidden = false
+            progressDetails.setExpanded(true)
+            startReceiptPolling(for: operation)
+        }
         var environment = kind == "update" ? Self.controlCenterUpdateEnvironment : [:]
         if kind == "update" {
             environment["SKS_UPDATE_OPERATION_ID"] = operation.id
@@ -284,12 +292,23 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
     }
 
     private func reloadSnapshot() {
+        guard !busy, !snapshotLoading else { return }
+        snapshotLoading = true
+        setBusy(true)
+        headline.stringValue = "Checking for updates…"
+        snapshotSpinner.startAnimation(nil)
         let args = refreshSharedSnapshotOnNextReload
             ? ["update", "status", "--refresh"] + Self.projectContext + ["--json"]
             : ["update", "status"] + Self.projectContext + ["--json"]
         refreshSharedSnapshotOnNextReload = false
         let timeout = args.contains("--refresh") ? NativeView.mutationTimeout : NativeView.statusTimeout
-        processClient.run(args, timeout: timeout) { [weak self] result in self?.render(statusResult: result) }
+        processClient.run(args, timeout: timeout) { [weak self] result in
+            guard let self = self else { return }
+            self.snapshotLoading = false
+            self.setBusy(false)
+            self.snapshotSpinner.stopAnimation(nil)
+            self.render(statusResult: result)
+        }
     }
 
     private func codexUpdateResultIsSuccessful(_ result: ProcessResult) -> Bool {
@@ -301,7 +320,7 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         return json["ok"] as? Bool == true
     }
 
-    private func reviewedUpdate(from result: ProcessResult) -> ReviewedUpdate? {
+    private func reviewedUpdate(from result: ProcessResult) -> ReviewedSoftwareUpdate? {
         guard !result.truncated,
               let data = result.output.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -317,10 +336,11 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
               registry.count <= 2_048,
               let canonicalRegistry = OperationCoordinator.canonicalRegistry(registry),
               canonicalRegistry == registry else { return nil }
-        return ReviewedUpdate(target: target, registry: canonicalRegistry, projectRoot: projectRoot)
+        return ReviewedSoftwareUpdate(target: target, registry: canonicalRegistry, projectRoot: projectRoot)
     }
 
     private func renderCodexUpdate(result: ProcessResult) {
+        codexUpdateStatus.isHidden = false
         guard !result.truncated,
               let data = result.output.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -359,12 +379,14 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
     private func render(statusResult result: ProcessResult) {
         let receipt = operations.latestUpdateReceipt()
         if result.code != 0 {
-            status.stringValue = "Update status unavailable. No success state was assumed."
+            headline.stringValue = "Could not check for updates"
+            status.stringValue = "Update status unavailable. Try Check Now or open Diagnostics."
             if let receipt = receipt { render(receipt: receipt) }
             return
         }
         guard let data = result.output.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            status.stringValue = "Update status output was not valid JSON."
+            headline.stringValue = "Could not read update status"
+            status.stringValue = "Try Check Now or open Diagnostics."
             if let receipt = receipt { render(receipt: receipt) }
             return
         }
@@ -374,16 +396,21 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         let generatedAt = json["generated_at"] as? String ?? "unknown"
         let expiresAt = json["expires_at"] as? String ?? "unknown"
         let expired = SKSTimestamp.date(from: expiresAt).map { $0 <= Date() } ?? true
+        let count = json["update_count"] as? Int
+        headline.stringValue = count.map { $0 == 0 ? "You’re up to date" : "\($0) update\($0 == 1 ? "" : "s") available" } ?? "Update status needs attention"
         status.stringValue = [
-            "SKS \(sks?["current"] as? String ?? "unknown") → \(sks?["latest"] as? String ?? "unknown") · Codex CLI \(codex?["current"] as? String ?? "unknown") → \(codex?["latest"] as? String ?? "unknown")",
-            "Menu Bar expected \(menu?["expected_version"] as? String ?? AppRuntime.packageVersion) · installed \(menu?["installed_version"] as? String ?? "unknown") · rebuild \(menu?["rebuild_required"] as? Bool == true ? "required" : "not required")",
-            "Last checked \(formatTimestamp(generatedAt)) · expires \(formatTimestamp(expiresAt))\(expired ? " (expired)" : "") · source \(json["source"] as? String ?? "unknown")"
+            "SKS  \(OverviewSummary.versionSummary(sks))",
+            "Codex CLI  \(OverviewSummary.versionSummary(codex))",
+            "Menu Bar  \(menu?["installed_version"] as? String ?? AppRuntime.packageVersion)\(menu?["rebuild_required"] as? Bool == true ? " · rebuild needed" : "")",
+            "Last checked \(formatTimestamp(generatedAt))\(expired ? " · check again for current status" : "")"
         ].joined(separator: "\n")
         if let receipt = receipt { render(receipt: receipt) }
         else {
             stageStatus.stringValue = stageChecklist(receipt: nil)
             let publicError = json["public_error"] as? String
             remediation.stringValue = publicError.map { "Remediation: \($0)" } ?? "Rollback: no completed update receipt is available yet."
+            recoveryDetails.isHidden = publicError == nil
+            recoveryDetails.setExpanded(publicError != nil)
         }
     }
 
@@ -416,6 +443,11 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
     }
 
     private func render(receipt: UpdateOperationReceiptSnapshot) {
+        progressDetails.isHidden = false
+        recoveryDetails.isHidden = false
+        let needsAttention = !["succeeded", "rolled_back", "queued", "running"].contains(receipt.state)
+        if needsAttention { recoveryDetails.setExpanded(true) }
+
         let completed = Set(receipt.stages.map(\.id)).intersection(Set(OperationCoordinator.updateStageOrder)).count
         progress.isIndeterminate = false
         progress.minValue = 0

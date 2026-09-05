@@ -50,9 +50,16 @@ const MIN_FAN_IN_FOR_VERIFICATION_WARNING = 3;
 export class EvidenceGraphExtractor implements ContextGraphExtractor {
   readonly id = EVIDENCE_EXTRACTOR_ID;
 
-  readonly revision = EVIDENCE_EXTRACTOR_REVISION;
+  readonly revision: string;
 
-  constructor(private readonly sourceInventory: SharedSourceInventory = createSharedSourceInventory()) {}
+  constructor(
+    private readonly sourceInventory: SharedSourceInventory = createSharedSourceInventory(),
+    private readonly includeContextPack = true
+  ) {
+    this.revision = includeContextPack
+      ? EVIDENCE_EXTRACTOR_REVISION
+      : `${EVIDENCE_EXTRACTOR_REVISION}-proofs-only`;
+  }
 
   /**
    * `changedPaths` is intentionally not used to narrow the walk: the evidence
@@ -70,12 +77,14 @@ export class EvidenceGraphExtractor implements ContextGraphExtractor {
     const builder = new EvidenceFragmentBuilder(input.limits, input.observedAt);
     const risks = new RiskDomainRegistry();
 
-    const pack = extractContextPackEvidence(builder, ctx, risks);
+    const pack = this.includeContextPack
+      ? extractContextPackEvidence(builder, ctx, risks)
+      : { packPresent: false, packHash: null, claimCount: 0 };
     const proofs = extractProofEvidence(builder, ctx, risks);
     risks.flush(builder, pack.packPresent ? CONTEXT_PACK_REL : PROOF_BANK_REL);
     noteUnverifiedFanIn(builder);
 
-    if (!pack.packPresent && proofs.proofCount === 0) {
+    if (this.includeContextPack && !pack.packPresent && proofs.proofCount === 0) {
       builder.addIssue(
         lintWarning('extractor_skipped_input', 'no TriWiki evidence artifacts were present; the evidence fragment is empty by observation, not by failure', {
           path: CONTEXT_PACK_REL,
@@ -88,9 +97,12 @@ export class EvidenceGraphExtractor implements ContextGraphExtractor {
 }
 
 export function createEvidenceGraphExtractor(
-  options: { sourceInventory?: SharedSourceInventory } = {}
+  options: { sourceInventory?: SharedSourceInventory; includeContextPack?: boolean } = {}
 ): ContextGraphExtractor {
-  return new EvidenceGraphExtractor(options.sourceInventory ?? createSharedSourceInventory());
+  return new EvidenceGraphExtractor(
+    options.sourceInventory ?? createSharedSourceInventory(),
+    options.includeContextPack !== false
+  );
 }
 
 /**

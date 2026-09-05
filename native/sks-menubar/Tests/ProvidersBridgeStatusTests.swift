@@ -32,6 +32,14 @@ final class ProvidersBridgeStatusTests: XCTestCase {
         XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
     }
 
+    func testAuthPriorityExtensionIsAcceptedAndValidated() throws {
+        var status = ProviderV3Fixture.status()
+        status["auth_priority"] = ["enabled": true, "state": "active", "error": NSNull()]
+        XCTAssertNoThrow(try DesktopBridgeStatusV3Truth.decode(from: status))
+        status["auth_priority"] = ["enabled": false, "state": "active"]
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+    }
+
     func testUnknownTopLevelKeyStillRejected() {
         var status = ProviderV3Fixture.status()
         status["unexpected_key"] = true

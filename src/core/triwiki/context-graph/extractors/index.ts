@@ -56,6 +56,21 @@ export function architectureMapGraphExtractors(options: { preparedInventory?: Co
   ];
 }
 
+/**
+ * Align publication registry. It keeps code, topology, and proof evidence, but
+ * never reads the generated context pack that Align replaces from the graph.
+ * Including that pack would make every successful publication stale against
+ * the bytes it had just generated.
+ */
+export function alignGraphExtractors(options: { preparedInventory?: CodeInventory } = {}): ContextGraphExtractor[] {
+  const sourceInventory = createSharedSourceInventory(options.preparedInventory ?? null);
+  return [
+    createCodeGraphExtractor({ sourceInventory }),
+    createTopologyGraphExtractor({ sourceInventory }),
+    createEvidenceGraphExtractor({ sourceInventory, includeContextPack: false })
+  ];
+}
+
 /** Sorted extractor ids as persisted on Align ledgers / snapshot.extractors. */
 export const ARCHITECTURE_MAP_EXTRACTOR_IDS = Object.freeze(['code', 'topology', 'triwiki-evidence'] as const);
 

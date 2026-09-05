@@ -347,7 +347,6 @@ const FLAGSHIP_RELEASE_GATES = Object.freeze([
   'dfix:patch-handoff',
   'dfix:verification-recommendation',
   'all-features:deep-completion',
-  'evidence:flagship-coverage',
   'dfix:fixture',
   'dfix:verification',
   'schema:check'

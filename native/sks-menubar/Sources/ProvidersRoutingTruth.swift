@@ -248,7 +248,7 @@ struct DesktopBridgeStatusV3Truth {
         "schema", "checked_at", "correlation_id", "management", "service",
         "http_probe", "websocket_probe", "native_identity", "providers", "routing",
         "catalog_sync", "capabilities", "readiness", "recovery_actions",
-        "ok", "execution_ok", "command_summary"
+        "ok", "execution_ok", "command_summary", "auth_priority"
     ]
     let raw: [String: Any]
     let checkedAt: String
@@ -261,7 +261,7 @@ struct DesktopBridgeStatusV3Truth {
     private static let envelopeKeys: Set<String> = ["ok", "execution_ok", "command_summary"]
 
     static func decode(from json: [String: Any]) throws -> DesktopBridgeStatusV3Truth {
-        let required = keys.subtracting(envelopeKeys)
+        let required = keys.subtracting(envelopeKeys).subtracting(["auth_priority"])
         guard required.isSubset(of: Set(json.keys)), Set(json.keys).isSubset(of: keys),
               json["schema"] as? String == "sks.desktop-bridge-status.v3",
               let checkedAt = nonempty(json["checked_at"]), let correlationId = nonempty(json["correlation_id"]),
@@ -277,6 +277,9 @@ struct DesktopBridgeStatusV3Truth {
               json["execution_ok"] == nil || json["execution_ok"] is Bool,
               json["command_summary"] == nil || nonempty(json["command_summary"]) != nil else {
             throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid")
+        }
+        if json["auth_priority"] != nil, AuthPriorityState.decode(json) == nil {
+            throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_auth_priority_invalid")
         }
         let managed = management["managed"] as? Bool == true
         let managementValid = managed

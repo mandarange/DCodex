@@ -279,14 +279,14 @@ Projection: [PRODUCT-CONTRACT.md](PRODUCT-CONTRACT.md).
 
 ### R1. Naruto 모델 라우팅
 
-- **모순·모호:** Terra/Sol만으로는 기계적 타이핑 슬라이스 라우팅이 불명.
+- **모순·모호:** 판단·탐색 역할만으로는 기계적 타이핑 슬라이스 라우팅이 불명.
 - **증거:** `README.md` model routing; AGENTS routing notes.
 - **Q→결정:** (c) Luna Max를 혼동 없는 디테일 타이핑 작업용으로 추가? → **채택.**
 - **확정 계약:** Naruto 슬라이스 라우팅 제품 계약은 다음과 같다.
   - **Luna Max:** 혼동 여지가 없는, 진짜 디테일한 타이핑 수준(기계적·범위가 극히 좁고 판단이 거의 불필요한) 작업
-  - **Terra Max:** read-heavy 탐색·컨텍스트
-  - **Sol High:** 일반 구현
-  - **Sol Max:** 고위험·집중 판단·최종 리뷰만
+  - **Astra Medium:** read-heavy 탐색·컨텍스트
+  - **Astra High:** 일반 구현
+  - **Astra Max:** 고위험·집중 판단·최종 리뷰만
 - **후속:** README/스킬/라우터 문구 정렬 → `needs-code` (NC-12).
 - **상태:** `decided`
 
