@@ -10,6 +10,8 @@
   and repair. Add a Settings switch in SKS Center and
   `sks codex-app context-management status|on|off`; preserve explicit opt-outs.
   This preference applies to new tasks subject to Codex account/provider support.
+- Update the bundled Codex SDK/runtime to 0.153.4 so it can load the new nested
+  context-management feature setting.
 
 ## [10.1.1] - 2026-09-06
 

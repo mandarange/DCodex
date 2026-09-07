@@ -196,7 +196,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "@openai/codex-sdk": "0.150.1",
+    "@openai/codex-sdk": "0.153.4",
     "smol-toml": "^1.7.0",
     "typescript": "^5.9.3",
     "ws": "^8.21.3"
