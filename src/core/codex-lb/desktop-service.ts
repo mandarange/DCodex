@@ -382,25 +382,31 @@ export async function installAndStartDesktopBridgeService(options: DesktopBridge
   if (bootstrap.code !== 0 && !bootstrap.timedOut) return failedStatus(paths, settings, service, 'missing', 'desktop_bridge_launchd_bootstrap_failed');
   await run(ctl, ['kickstart', '-k', service], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch(() => undefined);
   const status = await waitForBridge({ ...options, home });
-  if (!status.ok) {
-    await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
-    // A launchd agent has no macOS files-and-folders grant, so an entry under
-    // Desktop/Documents/Downloads blocks node's module loader inside open(2)
-    // and the service never writes its state. Name that condition instead of
-    // leaving only desktop_bridge_state_missing.
-    if (await launchTargetsProtectedFolder([command.executable, ...command.arguments], home)) {
-      return withProtectedFolderBlocker(status);
+  // Only a service that never came up is booted out. A bridge that is serving
+  // but reports a blocker — typically `desktop_bridge_runtime_version_stale`
+  // when the entry launchd ran is an older global install than this CLI — is
+  // left running and the blocker is returned for the caller to report: tearing
+  // down a healthy service over a version label left Codex with a dead port.
+  if (status.running) {
+    if (!status.ok) return status;
+    try {
+      await cleanupRetiredDesktopBridgeRuntime(retired);
+      return status;
+    } catch (error) {
+      await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
+      await removeStaleState(paths.state_path, options.processExists);
+      return failedStatus(paths, settings, service, 'missing', safeServiceError(error));
     }
-    return status;
   }
-  try {
-    await cleanupRetiredDesktopBridgeRuntime(retired);
-    return status;
-  } catch (error) {
-    await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
-    await removeStaleState(paths.state_path, options.processExists);
-    return failedStatus(paths, settings, service, 'missing', safeServiceError(error));
+  await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
+  // A launchd agent has no macOS files-and-folders grant, so an entry under
+  // Desktop/Documents/Downloads blocks node's module loader inside open(2)
+  // and the service never writes its state. Name that condition instead of
+  // leaving only desktop_bridge_state_missing.
+  if (await launchTargetsProtectedFolder([command.executable, ...command.arguments], home)) {
+    return withProtectedFolderBlocker(status);
   }
+  return status;
 }
 
 export async function bootstrapExistingDesktopBridgeService(options: DesktopBridgeServiceOptions = {}): Promise<DesktopBridgeServiceStatus> {
@@ -764,6 +770,25 @@ interface LaunchCommandResolution {
 }
 
 /**
+ * launchd starts an agent with a minimal PATH that holds no `node`, so a
+ * `#!/usr/bin/env node` entry reached through a bin symlink — the shape of
+ * every npm global install — dies as `env: node: No such file or directory`
+ * before any bridge code runs, and the failed restart booted the service out.
+ * A JavaScript entry is therefore exec'd through the interpreter running this
+ * command, exactly as the argv[1] candidate is; only a native executable is
+ * launched by itself.
+ */
+export function launchCommandForExecutable(
+  executable: string,
+  resolved: string,
+  execPath: string = process.execPath
+): { executable: string; arguments: string[] } {
+  return /\.[cm]?js$/i.test(resolved)
+    ? { executable: path.resolve(execPath), arguments: [path.resolve(resolved)] }
+    : { executable: path.resolve(executable), arguments: [] };
+}
+
+/**
  * The interpreter and CLI entry launchd will exec, chosen so the service can
  * actually start.
  *
@@ -793,7 +818,7 @@ async function resolveLaunchCommand(options: DesktopBridgeServiceOptions, home: 
     candidates.push({ executable: path.resolve(process.execPath), arguments: [path.resolve(entry)] });
   }
   const sks = await which('sks').catch(() => null);
-  if (sks) candidates.push({ executable: path.resolve(sks), arguments: [] });
+  if (sks) candidates.push(launchCommandForExecutable(sks, await fsp.realpath(sks).catch(() => sks)));
   let rejectedProtected = false;
   for (const candidate of candidates) {
     if (await launchTargetsProtectedFolder([candidate.executable, ...candidate.arguments], home)) { rejectedProtected = true; continue; }
@@ -840,7 +865,7 @@ export async function bootstrapLaunchdWithRetry(options: DesktopBridgeServiceOpt
 async function inspectLaunchd(options: DesktopBridgeServiceOptions, service: string): Promise<{ loaded: boolean; running: boolean }> { if ((options.platform || process.platform) !== 'darwin') return { loaded: false, running: false }; const result = await (options.run || runProcess)(options.launchctl || '/bin/launchctl', ['print', service], { timeoutMs: 3_000, maxOutputBytes: 32 * 1024 }).catch(() => null); if (!result || result.code !== 0) return { loaded: false, running: false }; const text = `${result.stdout}\n${result.stderr}`; return { loaded: true, running: /state = running/.test(text) && /pid = \d+/.test(text) }; }
 // Node cold start for `bridge serve` can exceed several seconds on a loaded
 // machine; giving up early boots the healthy-but-slow service back out.
-async function waitForBridge(options: DesktopBridgeServiceOptions): Promise<DesktopBridgeServiceStatus> { let status = await desktopBridgeServiceStatus(options); for (let i = 0; i < 150 && !status.ok; i += 1) { await delay(100); status = await desktopBridgeServiceStatus(options); } return status; }
+async function waitForBridge(options: DesktopBridgeServiceOptions): Promise<DesktopBridgeServiceStatus> { let status = await desktopBridgeServiceStatus(options); for (let i = 0; i < 150 && !status.running; i += 1) { await delay(100); status = await desktopBridgeServiceStatus(options); } return status; }
 async function removeStaleState(file: string, probe?: (pid: number) => boolean): Promise<void> { const state = await readDesktopBridgeState(file).catch(() => null); if (!state || !(probe || desktopBridgeProcessExists)(state.pid)) await fsp.unlink(file).catch(() => undefined); }
 async function waitForShutdown(handle: DesktopBridgeHandle): Promise<void> { await new Promise<void>((resolve) => { const done = (): void => { process.off('SIGINT', done); process.off('SIGTERM', done); resolve(); }; process.once('SIGINT', done); process.once('SIGTERM', done); handle.server.once('close', done); }); }
 function failedStatus(paths: DesktopBridgeServicePaths, settings: DesktopBridgeServiceSettings, service: string, status: DesktopBridgeServiceStatus['status'], blocker: string): DesktopBridgeServiceStatus { return { schema: DESKTOP_BRIDGE_SERVICE_SCHEMA, ok: false, supported: true, installed: false, loaded: false, running: false, status, service, paths, state: null, settings, expected_config_generation: null, credential_source: null, blockers: [blocker] }; }

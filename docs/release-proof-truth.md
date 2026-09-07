@@ -1,7 +1,7 @@
-# Release Proof Truth — 10.1.2
+# Release Proof Truth — 10.1.3
 ## Current assertion
 
-10.1.2 is a release candidate. Source changes and version metadata do not
+10.1.3 is a release candidate. Source changes and version metadata do not
 authorize publication. The final clean candidate commit must have a passing
 canonical test proof, full release DAG, required real-check summary, fresh
 dist, and matching release stamp and pack receipt. Direct publication also
@@ -9,15 +9,19 @@ requires clean `main` equal to live `origin/main`, an unpublished version,
 the configured public `latest` dist-tag, and valid maintainer authentication.
 The operator performs the final `npm publish`.
 
-| Claim | Evidence required for 10.1.2 |
+| Claim | Evidence required for 10.1.3 |
 | --- | --- |
 | Version authorities agree | Current `release:version-truth` result after the final build |
-| Center reads the effective MCP inventory | Native process tests covering delayed output, workspace arguments, and error responses; desktop captures remain separately identified |
-| Existing global roles migrate safely | Tests for Astra/Luna routing, custom homes, missing directories, symlinks, and preservation of user provider/permission settings |
+| Codex-LB priority governs initial Responses WebSockets | Loopback upstream tests using model-less upgrades and model-bearing frames (`responses-websocket.test.ts`) |
+| The candidate bridge routes a model-less Codex Responses WebSocket to Codex-LB on the maintainer's Mac | verified-on-machine, 2026-09-07T14:14Z: the working-tree 10.1.3 bridge served on loopback port 53066 from an isolated HOME holding a copy of the machine's settings (registry `14349f40…`, policy `d7603b6b…`); a WebSocket upgrade carrying no model and a fake ChatGPT bearer was accepted in 7 ms with nothing dialed upstream; the first `response.create` for `gpt-6-astra` reached the registered Codex-LB gateway and returned `response.completed` (`resp_0dab08d8…`, 31 tokens, text `OK`) in 2.6 s with zero bridge rejections — a fake bearer on an official passthrough would have failed with 401, so the reply proves the provider credential path. Record: `.sneakoscope/reports/release/10.1.3/live-responses-websocket-smoke.json` (local, not packaged). One machine, one Codex-LB host; the installed App's own turn after `sks update` remains a separate observation |
+| A serving bridge is not booted out over a blocker alone | passed-hermetic | provider-mutation suite: a settings restart whose bridge comes up running with `desktop_bridge_runtime_version_stale:10.1.2:10.1.3` reports that blocker and never calls `stop`; the installer's `waitForBridge` waits for `running`, and only a service that never came up is booted out |
+| A prewarmed socket is not cut before its first request | passed-hermetic | an accepted socket idles past `requestTimeoutMs` and `idleTimeoutMs` with nothing dialed, then routes its first create; the leak guard closes an unbound socket with code 1000 and no error event only after `websocketInitialCreateTimeoutMs` (default one hour) |
+| The launch agent can start under launchd's PATH | passed-hermetic + verified-on-machine | `launchCommandForExecutable` pairs a PATH-resolved JavaScript entry with the running Node binary; on the maintainer's Mac the broken plist (bare `~/.nvm/…/bin/sks` symlink, `env: node: No such file or directory` in `desktop-bridge.err.log`, service absent from the gui domain) was rewritten by the candidate's `sks bridge repair` run from the Desktop checkout to `<node> …/sneakoscope/dist/bin/sks.js bridge serve …`, launchd started the installed 10.1.2 bridge from it, and the candidate's own installer then booted it out as `desktop_bridge_runtime_version_stale:10.1.2:10.1.3` (a checkout CLI installing a different global version — not a user flow); the installed CLI's `sks bridge repair` completed on the repaired plist with the 10.1.2 bridge loaded, running, and listening on 53451 with zero blockers |
+| Existing installs converge to the current bridge | Update restage tests covering stale versions, changed settings, repair failure, and current-version readback |
 | The package can be published | Full source-bound stamp, pack receipt, provenance, clean live-origin preflight, authenticated maintainer, and successful lifecycle dry run |
-| 10.1.2 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
+| 10.1.3 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
 
-The npm registry reported 10.1.1 as `latest` on
+The npm registry reported 10.1.2 as `latest` on
 2026-09-07. Neither older release receipts nor synthetic fixtures prove
 current live behavior. Optional physical and image evidence remains optional
 for the direct path and must retain its measured status. See
@@ -170,9 +174,9 @@ Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
 All release artifacts bound to 9.2.7 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 10.1.2 evidence.
+must not be renamed, copied, or treated as 10.1.3 evidence.
 
-New 10.1.2 claims:
+New 10.1.3 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
@@ -245,8 +249,8 @@ New 10.1.2 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 10.1.2 | passed-hermetic | `release:version-truth` 15 surfaces at 10.1.2 after incremental build |
-| The reported 10.1.2 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
+| All checked version authorities report 10.1.3 | passed-hermetic | `release:version-truth` 15 surfaces at 10.1.3 after incremental build |
+| The reported 10.1.3 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
 
 ## 9.1.0 assertion (historical)
 

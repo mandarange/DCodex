@@ -463,6 +463,86 @@ test('authentication priority persists across controller restarts and restores t
 });
 
 
+test('repair reaches the current installer without bootstrapping a broken old launch entry', async (t) => {
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup);
+  let installs = 0;
+  let oldBootstraps = 0;
+  const repaired = await executeDesktopBridgeCommandV3({ operation: 'repair' }, {
+    ...runtime.options,
+    bootstrapServiceImpl: async () => { oldBootstraps += 1; throw new Error('stale_launch_entry'); },
+    installServiceImpl: async () => {
+      installs += 1;
+      const settings = await readDesktopBridgeServiceSettings(desktopBridgeServicePaths(setup.home).settings_path);
+      assert.equal(settings?.route_policy.model_routes['gpt-6-astra']?.provider_id, 'codex-lb');
+      return serviceStatus(setup.home, true);
+    },
+  });
+  assert.equal(repaired.schema, 'sks.desktop-bridge-command-result.v1');
+  if (repaired.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(repaired.execution.ok, true, JSON.stringify(repaired.execution));
+  assert.equal(installs, 1);
+  assert.equal(oldBootstraps, 0);
+});
+
+test('ensure refreshes the catalog before the current installer without starting the old launch entry', async (t) => {
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup);
+  let installs = 0;
+  let oldBootstraps = 0;
+  const ensured = await executeDesktopBridgeCommandV3({ operation: 'ensure' }, {
+    ...runtime.options,
+    codexLbLookup: async () => [{ address: '93.184.216.34', family: 4 as const }],
+    fetchImpl: async (input) => new Response(JSON.stringify({ data: String(input).includes('openrouter.ai')
+      ? [{ id: 'or-mutation-model' }]
+      : [{ id: 'gpt-6-astra' }, { id: 'lb-mutation-model' }] }), { status: 200 }),
+    bootstrapServiceImpl: async () => { oldBootstraps += 1; throw new Error('stale_launch_entry'); },
+    installServiceImpl: async () => { installs += 1; return serviceStatus(setup.home, true); },
+  });
+  assert.equal(ensured.schema, 'sks.desktop-bridge-command-result.v1');
+  if (ensured.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(ensured.execution.ok, true, JSON.stringify(ensured.execution));
+  assert.equal(installs, 1);
+  assert.equal(oldBootstraps, 0);
+});
+
+test('authentication priority does not report active while an older bridge process is still running', async (t) => {
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup);
+  const enabled = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: true }, runtime.options);
+  assert.equal(enabled.schema, 'sks.desktop-bridge-command-result.v1');
+  if (enabled.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(enabled.ok, true);
+  const observed = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.status' }, {
+    ...runtime.options,
+    serviceStatusImpl: async () => serviceStatus(setup.home, true, ['desktop_bridge_runtime_version_stale:10.1.2:10.1.3']),
+  });
+  assert.equal(observed.schema, 'sks.desktop-bridge-command-result.v1');
+  if (observed.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.deepEqual(observed.result.auth_priority, {
+    enabled: true, state: 'unavailable', error: 'desktop_bridge_runtime_not_ready',
+  });
+});
+
+test('a restart that comes up running but version-stale is reported without stopping the service', async (t) => {
+  // The entry launchd ran can be an older global install than this CLI (a
+  // checkout, or `npx` beside a global). That bridge is serving; stopping it
+  // over a version label left Codex with a dead port.
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup);
+  runtime.options.bootstrapServiceImpl = async () => {
+    runtime.events.push('bootstrap');
+    return serviceStatus(setup.home, true, ['desktop_bridge_runtime_version_stale:10.1.2:10.1.3']);
+  };
+  const result = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: true }, runtime.options);
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.execution.blockers, ['desktop_bridge_runtime_version_stale:10.1.2:10.1.3']);
+  assert.deepEqual(runtime.events, ['bootstrap'], 'a serving bridge is never stopped over a version label');
+  assert.equal(runtime.isRunning(), true);
+});
+
 test('saved authentication priority reports unavailable after restart failure and becomes active after recovery', async (t) => {
   const setup = await fixture(t, true);
   const runtime = commandOptions(setup, true);

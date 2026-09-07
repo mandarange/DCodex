@@ -106,7 +106,7 @@ export interface DesktopBridgeConfig {
   /**
    * Official ChatGPT identity passthrough. When set, requests the route policy
    * does not claim for a provider — unknown models, non-Responses backend-api
-   * endpoints, unpinned WebSocket upgrades — and routes explicitly targeting
+   * endpoints — and routes explicitly targeting
    * `openai` are forwarded to this base URL carrying the CLIENT's own
    * Authorization and account headers instead of a substituted provider key.
    * Absent/null preserves the legacy fail-closed behavior.
@@ -126,6 +126,14 @@ export interface DesktopBridgeConfig {
   requestTimeoutMs?: number;
   maxConcurrentRequests?: number;
   maxConnections?: number;
+  /**
+   * How long an accepted Responses WebSocket may wait for its first
+   * `response.create` before the bridge releases it with a normal close.
+   * Codex prewarms a socket at startup and holds it until the first turn, so
+   * this is an hour-scale leak guard, not a request timeout. Defaults to one
+   * hour, the lifetime upstreams grant a connection.
+   */
+  websocketInitialCreateTimeoutMs?: number;
   stateFreshnessMs?: number;
 }
 

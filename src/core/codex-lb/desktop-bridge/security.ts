@@ -698,6 +698,10 @@ export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): void {
     && (!Number.isInteger(config.maxConnections) || config.maxConnections < 1 || config.maxConnections > 2_048)) {
     throw new DesktopBridgeError('bridge_connection_limit_invalid');
   }
+  if (config.websocketInitialCreateTimeoutMs !== undefined
+    && (!Number.isFinite(config.websocketInitialCreateTimeoutMs) || config.websocketInitialCreateTimeoutMs < 1_000 || config.websocketInitialCreateTimeoutMs > 86_400_000)) {
+    throw new DesktopBridgeError('bridge_websocket_initial_create_timeout_invalid');
+  }
   for (const origin of config.allowedOrigins) normalizeAllowedOrigin(origin);
   if (!config.providerRegistry) throw new DesktopBridgeError('bridge_provider_registry_missing');
   if (!config.routePolicy) throw new DesktopBridgeError('bridge_route_policy_invalid');

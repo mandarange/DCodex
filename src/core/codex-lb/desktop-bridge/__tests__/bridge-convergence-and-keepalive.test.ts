@@ -77,7 +77,7 @@ function maskedFrame(payload: Buffer): Buffer {
  * `idleTimeoutMs`, so under the old behaviour the upstream socket is already
  * destroyed and the frame can never come back.
  */
-test('an established websocket outlives idleTimeoutMs of silence', async () => {
+test('an established raw native websocket outlives idleTimeoutMs of silence', async () => {
   const upstream = http.createServer();
   const upstreamSockets = new Set<net.Socket>();
   upstream.on('upgrade', (req, socket: net.Socket) => {
@@ -100,7 +100,7 @@ test('an established websocket outlives idleTimeoutMs of silence', async () => {
     await new Promise<void>((resolve, reject) => { client.once('error', reject); client.connect(bridgePort, '127.0.0.1', resolve); });
     const key = randomBytes(16).toString('base64');
     client.write([
-      `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses')} HTTP/1.1`,
+      `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/native-stream')} HTTP/1.1`,
       `Host: 127.0.0.1:${bridgePort}`,
       'Connection: Upgrade', 'Upgrade: websocket', 'Sec-WebSocket-Version: 13',
       `Sec-WebSocket-Key: ${key}`, 'Origin: app://codex', `x-sks-model: ${PUBLIC_MODEL}`,

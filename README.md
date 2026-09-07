@@ -16,7 +16,7 @@
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-Current package: **SKS 10.1.2**. Install the latest stable release from npm.
+Current package: **SKS 10.1.3**. Install the latest stable release from npm.
 
 [Quick start](#install-in-one-command) · [Commands](#everyday-commands) · [SKS Center](#sks-center-macos) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 
@@ -176,6 +176,7 @@ freshness semantics.
 - [Essential Trust](docs/essential-trust.md) — verification profiles and safety boundaries.
 - [Astra guidance](docs/astra-guidance.md) — how SKS applies the official model recommendations.
 - [Agent Bridge](docs/AGENT-BRIDGE.md) — integrate through the CLI or MCP interface.
+- [Codex-LB priority](docs/codex-lb-priority.md) — how Codex App WebSockets follow the Center priority setting.
 - [Release readiness](docs/release-readiness.md) — build, verify, and publish a release.
 - [Release evidence](docs/release-proof-truth.md) — what each verification result proves.
 - [Changelog](CHANGELOG.md) — changes by version.

@@ -9,6 +9,7 @@ import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
 import { desktopBridgeOfficialPassthroughEnabled, ensureDesktopBridgeRemoteTarget, isUnreachableUpstreamError, refreshDesktopBridgeRemoteTarget, resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
+import { forwardResponsesWebSocket, isResponsesWebSocketRequest } from './responses-websocket.js';
 import {
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL,
   DesktopBridgeError,
@@ -82,14 +83,9 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
   route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential | null; provider: PreparedDesktopBridgeProvider | null;
 }> {
   const sessionIdentity = resolveCodexSessionIdentity(req.headers);
-  // A WebSocket upgrade carries no request body and no `x-sks-model` (that
-  // header is SKS's own, and only its probes ever send it), while the HTTP path
-  // reads the model from the JSON body. The model was therefore always empty
-  // here, `model_routes['']` never resolved, and EVERY Codex Responses
-  // WebSocket failed — invisibly, because HTTP fallback then served the turn.
-  //
-  // The thread's session pin already records the provider and model bound to
-  // this thread, which is exactly the routing decision the upgrade lacks.
+  // Native non-Responses tunnels can route from a probe header or existing pin.
+  // Responses upgrades instead defer routing to response.create.model in the
+  // message-aware bridge; an empty upgrade must not select official OAuth there.
   const pinnedModel = websocketPinnedModel(sessionIdentity.thread_id, config);
   const publicModel = singleBridgeHeader(req.headers, 'x-sks-model') || pinnedModel || '';
   if (!publicModel && !(desktopBridgeOfficialPassthroughEnabled(config) && config.officialRemote)) {
@@ -97,8 +93,7 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
     // the upgrade. That is a permanent property of this request, not a flaky
     // upstream, and saying so is what lets the client fall back to HTTP at once
     // instead of burning its reconnect budget. With official passthrough
-    // configured this case no longer exists: an unpinned upgrade rides through
-    // to the official upstream with the client's own identity.
+    // configured an unpinned native endpoint uses the client's official identity.
     throw new DesktopBridgeError('bridge_websocket_route_unresolvable');
   }
   const route = await resolveAndBindDesktopBridgeRouteContext({
@@ -186,6 +181,11 @@ export async function forwardWebSocket(
   config: PreparedDesktopBridgeConfig,
   authenticatedLocalBaseUrl = desktopBridgeListenOrigin(config),
 ): Promise<void> {
+  if (isResponsesWebSocketRequest(req)) {
+    try { forwardResponsesWebSocket(req, client, head, config); }
+    catch (error) { writeUpgradeFailure(client, error, req); }
+    return;
+  }
   let prepared;
   try { prepared = await prepareDesktopBridgeWebSocketRequest(req, config); }
   catch (error) {

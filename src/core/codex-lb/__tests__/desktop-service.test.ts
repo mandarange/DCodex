@@ -9,6 +9,7 @@ import {
   defaultDesktopBridgeServiceSettings,
   desktopBridgeServicePaths,
   desktopBridgeServiceStatus,
+  launchCommandForExecutable,
   readDesktopBridgeClientCapability,
   readDesktopBridgeServiceSettings,
   resolveDesktopBridgeActivationSettings,
@@ -312,4 +313,20 @@ test('launchd bootstrap retries only after the previous service instance is full
   assert.equal(result.code, 0);
   assert.equal(bootstrapAttempts, 2);
   assert.deepEqual(calls.filter((args) => args[0] === 'bootout').length, 1);
+});
+
+test('a PATH-resolved JavaScript sks entry is launched through the current interpreter', () => {
+  // launchd's PATH has no `node`, so the bin symlink's `#!/usr/bin/env node`
+  // shebang cannot start the service; the entry must ride the running binary.
+  const symlinked = launchCommandForExecutable('/opt/nvm/bin/sks', '/opt/nvm/lib/node_modules/sneakoscope/dist/bin/sks.js', '/opt/nvm/bin/node');
+  assert.deepEqual(symlinked, { executable: '/opt/nvm/bin/node', arguments: ['/opt/nvm/lib/node_modules/sneakoscope/dist/bin/sks.js'] });
+  const native = launchCommandForExecutable('/usr/local/bin/sks', '/usr/local/bin/sks', '/opt/nvm/bin/node');
+  assert.deepEqual(native, { executable: '/usr/local/bin/sks', arguments: [] });
+  const plist = renderDesktopBridgeLaunchdPlist({
+    executablePath: symlinked.executable,
+    arguments: [...symlinked.arguments, 'bridge', 'serve'],
+    stdoutPath: '/tmp/sks-out.log',
+    stderrPath: '/tmp/sks-err.log'
+  });
+  assert.match(plist, /<string>\/opt\/nvm\/bin\/node<\/string>\n\s*<string>\/opt\/nvm\/lib\/node_modules\/sneakoscope\/dist\/bin\/sks\.js<\/string>/);
 });

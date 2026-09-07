@@ -80,7 +80,8 @@ export async function syncCatalog(options: DesktopBridgeControllerV3Options): Pr
 }
 
 export async function syncCatalogInternal(
-  options: DesktopBridgeControllerV3Options
+  options: DesktopBridgeControllerV3Options,
+  behavior: { restartService?: boolean } = {}
 ): Promise<Record<string, unknown>> {
   const paths = controllerPaths(options);
   const historicalIntent = inspectHistoricalDesktopBridgeIntent(await readText(paths.configPath, ''));
@@ -227,7 +228,7 @@ export async function syncCatalogInternal(
     };
   }
   const serviceBefore = await (options.serviceStatusImpl || desktopBridgeServiceStatus)({ ...options, home: paths.home });
-  if (serviceBefore.installed || serviceBefore.running) {
+  if (behavior.restartService !== false && (serviceBefore.installed || serviceBefore.running)) {
     await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)({
       ...options,
       home: paths.home,

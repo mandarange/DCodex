@@ -162,11 +162,14 @@ export async function persistRuntimeSettings(
     await stopAfterFailedRestart(restartOptions, options);
     throw error;
   }
-  if (!restarted.ok || !restarted.running) {
+  if (!restarted.running) {
     await stopAfterFailedRestart(restartOptions, options);
     const rootCause = restarted.blockers.find((blocker) => blocker === 'desktop_bridge_entry_macos_protected_folder');
     throw new Error(rootCause || restarted.blockers[0] || 'desktop_bridge_restart_failed');
   }
+  // Running with a blocker (a stale runtime version, an unverified transport)
+  // is reported, never answered by stopping the service that just came up.
+  if (!restarted.ok) throw new Error(restarted.blockers[0] || 'desktop_bridge_restart_failed');
 }
 
 export async function quiesceRunningBridge(

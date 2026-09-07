@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+
+## [10.1.3] - 2026-09-07
+
+### Fixed
+
+- Route ordinary Codex App Responses WebSockets from the first request's model
+  instead of sending model-less upgrades to ChatGPT OAuth. Apply the same policy
+  and credential isolation as HTTP, including Codex-LB priority and model aliases.
+  Preserve native Astra steering and async messages; reject provider changes on
+  an established connection before forwarding or changing its session pin.
+- Repair stale Desktop Bridge launch configuration during `sks update` through
+  the current installer and verify the serving version after repair. Keep saved
+  provider credentials and routing preferences. Report remaining service failures
+  instead of treating a successful launchctl command as a completed repair.
+- Show saved Codex-LB priority as unavailable while the running bridge reports a
+  stale or unhealthy runtime.
+- Hold a prewarmed Codex Responses WebSocket open until its first request instead
+  of closing it after the request timeout. Nothing upstream is dialed before a
+  model arrives, and an unbound socket is released with a normal close only
+  after an hour.
+- Launch a PATH-resolved `sks` JavaScript entry through the current Node binary
+  in the Desktop Bridge launch agent. launchd's minimal PATH has no `node`, so
+  the symlinked entry failed with `env: node: No such file` and a failed
+  restart booted the service out.
+- Keep a Desktop Bridge that came up running when the installer or a settings
+  restart reports only a blocker such as a stale runtime version. Booting a
+  serving bridge out over a version label left Codex with a dead port; the
+  blocker is now returned for the caller to report.
+
 ## [10.1.2] - 2026-09-07
 
 ### Added

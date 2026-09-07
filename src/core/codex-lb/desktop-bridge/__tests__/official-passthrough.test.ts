@@ -217,7 +217,7 @@ test('a transient official 503 is absorbed by a fresh-connection replay', async 
   }
 });
 
-test('an unpinned websocket upgrade passes through to the official upstream with the client identity', async () => {
+test('an unpinned native non-Responses websocket passes through with the client identity', async () => {
   const upgradeHeaders: Array<{ authorization: string | undefined; codexLbKey: string | undefined }> = [];
   const official = recordingUpstream();
   // Upgraded sockets keep http.Server.close() waiting forever; track and
@@ -242,7 +242,7 @@ test('an unpinned websocket upgrade passes through to the official upstream with
     await new Promise<void>((resolve, reject) => { client.once('error', reject); client.connect(bridgePort, '127.0.0.1', resolve); });
     const key = randomBytes(16).toString('base64');
     client.write([
-      `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses')} HTTP/1.1`,
+      `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/native-stream')} HTTP/1.1`,
       `Host: 127.0.0.1:${bridgePort}`,
       'Connection: Upgrade', 'Upgrade: websocket', 'Sec-WebSocket-Version: 13',
       `Sec-WebSocket-Key: ${key}`, 'Origin: app://codex', `Authorization: ${CLIENT_OAUTH}`,

@@ -331,7 +331,7 @@ async function upgradeThroughBridge(bridgePort: number): Promise<string> {
     const timer = setTimeout(() => { socket.destroy(); reject(new Error('upgrade timed out')); }, 5_000);
     socket.once('connect', () => {
       socket.write([
-        `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses')} HTTP/1.1`,
+        `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/native-stream')} HTTP/1.1`,
         `Host: 127.0.0.1:${bridgePort}`,
         'Upgrade: websocket', 'Connection: Upgrade',
         `Sec-WebSocket-Key: ${Buffer.alloc(16, 0x51).toString('base64')}`,
@@ -347,7 +347,7 @@ async function upgradeThroughBridge(bridgePort: number): Promise<string> {
   });
 }
 
-test('a WebSocket upgrade on a dead pinned address re-resolves and reconnects once without a client retry', async () => {
+test('a raw native WebSocket upgrade on a dead pinned address re-resolves and reconnects once without a client retry', async () => {
   let upstreamUpgrades = 0;
   const upstream = upgradingUpstream(() => { upstreamUpgrades += 1; });
   const upstreamPort = await listen(upstream, '127.0.0.1');

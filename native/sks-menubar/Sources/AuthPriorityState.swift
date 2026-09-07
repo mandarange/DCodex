@@ -26,7 +26,7 @@ struct AuthPriorityState: Equatable {
             switch error {
             case "codex_lb_provider_disabled": return "On, unavailable · enable Codex-LB below"
             case "codex_lb_credential_missing": return "On, unavailable · connect your Codex-LB account below"
-            case "desktop_bridge_not_running": return "On, unavailable · open Bridge diagnostics and repair the bridge service"
+            case "desktop_bridge_not_running", "desktop_bridge_runtime_not_ready": return "On, unavailable · open Bridge diagnostics and repair the bridge service"
             case "codex_lb_route_not_ready", "codex_lb_eligible_route_missing": return "On, unavailable · validate Codex-LB and refresh its model catalog"
             default: return "On, unavailable · check your Codex-LB connection below"
             }

@@ -37,7 +37,7 @@ export async function ensureDesktopBridge(
   options: DesktopBridgeControllerV3Options,
   operation: 'ensure' | 'repair'
 ): Promise<DesktopBridgeCommandResult> {
-  const sync = await syncCatalogInternal(options);
+  const sync = await syncCatalogInternal(options, { restartService: false });
   let core = await loadCore(options);
   if (!core.activeCatalog.ok || !core.policy) {
     return commandResult(operation, true, statusFromCore(core, options), { catalog_sync: sync }, syncResultBlockers(sync), options);
@@ -61,7 +61,9 @@ export async function repairDesktopBridge(
 ): Promise<DesktopBridgeCommandResult> {
   let core = await loadCore(options);
   if (!core.activeCatalog.ok || !core.policy) return ensureDesktopBridge(options, 'repair');
-  await persistRuntimeSettings(core, options);
+  // Repair must replace a broken launch entry before trying to start it.
+  // The current installer below owns the single restart and its readback.
+  await persistRuntimeSettings(core, options, { restartService: false });
   const service = await (options.installServiceImpl || installAndStartDesktopBridgeService)({
     ...options,
     home: core.paths.home,
