@@ -19,10 +19,11 @@ The operator performs the final `npm publish`.
 | The launch agent can start under launchd's PATH | passed-hermetic + verified-on-machine | `launchCommandForExecutable` pairs a PATH-resolved JavaScript entry with the running Node binary; on the maintainer's Mac the broken plist (bare `~/.nvm/…/bin/sks` symlink, `env: node: No such file or directory` in `desktop-bridge.err.log`, service absent from the gui domain) was rewritten by the candidate's `sks bridge repair` run from the Desktop checkout to `<node> …/sneakoscope/dist/bin/sks.js bridge serve …`, launchd started the installed 10.1.2 bridge from it, and the candidate's own installer then booted it out as `desktop_bridge_runtime_version_stale:10.1.2:10.1.3` (a checkout CLI installing a different global version — not a user flow); the installed CLI's `sks bridge repair` completed on the repaired plist with the 10.1.2 bridge loaded, running, and listening on 53451 with zero blockers |
 | Existing installs converge to the current bridge | Update restage tests covering stale versions, changed settings, repair failure, and current-version readback |
 | The package can be published | Full source-bound stamp, pack receipt, provenance, clean live-origin preflight, authenticated maintainer, and successful lifecycle dry run |
-| 10.1.3 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
+| 10.1.3 is published | verified-on-registry, 2026-09-07T14:39Z: `npm view sneakoscope@10.1.3` reports `gitHead` 0eda7170 and `dist.integrity` `sha512-x19NFNTC…CafHog==`, `dist.unpackedSize` 12351726, `dist.fileCount` 1743, shasum `44a6feb2…`, all equal to the local pack receipt for that commit; `latest` resolves to 10.1.3 |
+| The installed 10.1.3 serves the maintainer's Mac and a real Codex turn binds to Codex-LB | verified-on-machine, 2026-09-07T14:45Z: `sks update` 10.1.2 → 10.1.3 completed all 17 stages, the restage started the 10.1.3 bridge (pid 9396 at 14:41:19Z), and `sks bridge status` reports readiness `ready` with priority `active`; a `codex exec` turn (codex-cli 0.153.4, ChatGPT auth, the App's own `openai_base_url`) ran over `transport=responses_websocket`, the bridge minted a `codex-lb` session pin for its thread and dialed the registered Codex-LB address (104.21.6.173) while the only chatgpt.com traffic was the non-Responses plugins listing. An App-originated turn remains the user's observation |
 
-The npm registry reported 10.1.2 as `latest` on
-2026-09-07. Neither older release receipts nor synthetic fixtures prove
+The npm registry reported 10.1.3 as `latest` on
+2026-09-07 after publication. Neither older release receipts nor synthetic fixtures prove
 current live behavior. Optional physical and image evidence remains optional
 for the direct path and must retain its measured status. See
 [the current release procedure](release-readiness.md#direct-npm-publication).

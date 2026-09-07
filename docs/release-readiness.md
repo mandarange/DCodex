@@ -31,9 +31,10 @@ with a fake ChatGPT bearer was accepted without dialing anything, and the first
 registered Codex-LB gateway. The record lives under
 `.sneakoscope/reports/release/10.1.3/` and is not packaged.
 
-On 2026-09-07 npm reported `latest` as 10.1.2. The release stamp and pack receipt
-must bind the final clean 10.1.3 commit. Actual publication remains the operator's
-`npm login` and `npm publish` steps. See
+10.1.3 was published on 2026-09-07 from commit 0eda7170; the registry tarball
+identity equals the pack receipt and `latest` resolves to it. The maintainer's
+Mac updated 10.1.2 → 10.1.3 with every stage green, the bridge restarted as
+10.1.3, and a real Codex turn over the Responses WebSocket bound to Codex-LB. See
 [the routing contract and documentation sources](codex-lb-priority.md).
 
 ## Direct npm publication
