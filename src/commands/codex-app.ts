@@ -21,6 +21,14 @@ import type { DesktopBridgeStatusV3 } from '../core/codex-lb/bridge-contracts.js
 
 export async function run(_command: any, args: any = []) {
   const action = args[0] || 'check';
+  if (action === 'context-management') {
+    const { contextManagementCommand } = await import('../core/codex-app/context-management-command.js');
+    const result = await contextManagementCommand(args.slice(1));
+    if (flag(args, '--json')) printJson(result);
+    else console.log(`${result.ok ? (result.enabled ? 'Enabled' : 'Disabled') : 'Unavailable'}: ${result.message}`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
   if (action === 'restart') return printCodexAppResult(args, await restartCodexApp());
   if (action === 'context-1m') {
     const { codexContext1mCommand } = await import('../core/codex-app/codex-context-window.js');
@@ -124,7 +132,7 @@ export async function run(_command: any, args: any = []) {
     if (!status.ok) process.exitCode = 1;
     return;
   }
-  console.error('Usage: sks codex-app check|status|restart|context-1m [status|on|off] [--no-restart]|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
+  console.error('Usage: sks codex-app check|status|restart|context-management [status|on|off]|context-1m [status|on|off] [--no-restart]|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
   console.error('Provider routing moved to: sks bridge provider configure|validate|enable; sks bridge catalog sync; sks bridge route set-default.');
   process.exitCode = 1;
 }

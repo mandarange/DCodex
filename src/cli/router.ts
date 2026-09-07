@@ -348,7 +348,7 @@ export function safeReadOnlySubcommand(command: CommandNameLite, args: readonly 
     return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
   }
   // `codex-app context-1m status` is the SKS Center 1M-context card probe.
-  if (command === 'codex-app' && sub === 'context-1m' && (nested === 'status' || nested === '' || nested.startsWith('--'))) {
+  if (command === 'codex-app' && ['context-1m', 'context-management'].includes(sub) && (nested === 'status' || nested === '' || nested.startsWith('--'))) {
     return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
   }
   if (command === 'remote' && ['readiness', 'status', 'show'].includes(sub)) {

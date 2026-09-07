@@ -19,6 +19,11 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
     private var contextEnabled: Bool?
     private var contextBusy = false
     private var contextGeneration = 0
+    private let memoryToggle = NSSwitch()
+    private let memoryStatus = NativeView.detail("Checking saved preference…")
+    private var memoryEnabled: Bool?
+    private var memoryBusy = false
+    private var memoryGeneration = 0
     init(processClient: ProcessClient, operations: OperationCoordinator, notifications: NotificationCoordinator) {
         self.processClient = processClient
         self.operations = operations
@@ -28,6 +33,17 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
+        memoryToggle.target = self
+        memoryToggle.action = #selector(toggleContextManagement)
+        memoryToggle.isEnabled = false
+        memoryToggle.setAccessibilityLabel("Experimental context management")
+        memoryToggle.setAccessibilityIdentifier("sks-context-management-toggle")
+        memoryStatus.setAccessibilityIdentifier("sks-context-management-status")
+        let memoryCard = NativeView.card(
+            title: "Astra context management",
+            subtitle: "Experimental · Keep notes and retrieve earlier messages and tool results. Enabled by default in SKS. Applies to new tasks with supported Codex and eligible ChatGPT sign-in; API-key and custom-provider sessions may not activate it.",
+            views: [NativeView.row([memoryToggle, NativeView.detail("Enable experimental context management")]), memoryStatus]
+        )
         followCodexLifecycle.target = self; followCodexLifecycle.action = #selector(save)
         followCodexLifecycle.setAccessibilityLabel("Show SKS Menu only while Codex is running")
         notificationButton = NativeView.button("Enable Notifications", target: self, action: #selector(enableNotifications))
@@ -50,11 +66,12 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         )
         view = NativeView.page([
             ControlKit.header("Settings", "Choose how SKS works on this Mac."),
-            lifecycleCard, notificationsCard, NativeDisclosure("Advanced", views: [contextCard])
+            memoryCard, lifecycleCard, notificationsCard, NativeDisclosure("Advanced", views: [contextCard])
         ])
     }
 
     func refreshOnAppear() {
+        refreshContextManagement()
         refreshContext1m()
         let configResult = readConfig()
         switch configResult {
@@ -84,6 +101,53 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
             case .malformed:
                 status.stringValue = "The settings file is malformed. No option can be changed or overwritten; repair it, then reopen Settings."
             }
+        }
+    }
+
+    private func refreshContextManagement() {
+        guard !memoryBusy else { return }
+        memoryGeneration += 1
+        let generation = memoryGeneration
+        processClient.run(["codex-app", "context-management", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
+            guard let self = self, !self.memoryBusy, generation == self.memoryGeneration else { return }
+            guard result.code == 0, let payload = self.json(result.output),
+                  payload["schema"] as? String == "sks.context-management.v1",
+                  payload["ok"] as? Bool == true, let enabled = payload["enabled"] as? Bool else {
+                self.memoryEnabled = nil
+                self.memoryToggle.isEnabled = false
+                self.memoryStatus.stringValue = "Saved setting unavailable. Check Codex configuration, then reopen Settings."
+                return
+            }
+            self.memoryEnabled = enabled
+            self.memoryToggle.state = enabled ? .on : .off
+            self.memoryToggle.isEnabled = true
+            self.memoryStatus.stringValue = enabled
+                ? "Setting enabled · start a new task to apply. Availability depends on Codex and your sign-in."
+                : "Setting disabled · your choice is preserved during updates."
+        }
+    }
+
+    @objc private func toggleContextManagement() {
+        guard !memoryBusy, let previous = memoryEnabled else { return }
+        let desired = memoryToggle.state == .on
+        guard let operation = operations.begin(kind: "context-management", mutationGroup: "codex-config", summary: "Change experimental context management") else {
+            memoryToggle.state = previous ? .on : .off
+            memoryStatus.stringValue = "Another configuration change is running. Try again when it finishes."
+            return
+        }
+        memoryBusy = true
+        memoryGeneration += 1
+        memoryToggle.isEnabled = false
+        memoryStatus.stringValue = "Saving preference…"
+        processClient.run(["codex-app", "context-management", desired ? "on" : "off", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+            guard let self = self else { return }
+            self.memoryBusy = false
+            let payload = self.json(result.output)
+            let ok = result.code == 0 && payload?["schema"] as? String == "sks.context-management.v1"
+                && payload?["ok"] as? Bool == true && payload?["enabled"] as? Bool == desired
+            _ = self.operations.update(operation, state: ok ? .succeeded : .failed, stage: "complete", progress: 1,
+                summary: ok ? "Preference saved. Start a new Codex task to apply." : "Save could not be confirmed. Rechecking the setting.")
+            self.refreshContextManagement()
         }
     }
 

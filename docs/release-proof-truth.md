@@ -1,8 +1,7 @@
-# Release Proof Truth — 10.1.1
-
+# Release Proof Truth — 10.1.2
 ## Current assertion
 
-10.1.1 is a release candidate. Source changes and version metadata do not
+10.1.2 is a release candidate. Source changes and version metadata do not
 authorize publication. The final clean candidate commit must have a passing
 canonical test proof, full release DAG, required real-check summary, fresh
 dist, and matching release stamp and pack receipt. Direct publication also
@@ -10,16 +9,16 @@ requires clean `main` equal to live `origin/main`, an unpublished version,
 the configured public `latest` dist-tag, and valid maintainer authentication.
 The operator performs the final `npm publish`.
 
-| Claim | Evidence required for 10.1.1 |
+| Claim | Evidence required for 10.1.2 |
 | --- | --- |
 | Version authorities agree | Current `release:version-truth` result after the final build |
 | Center reads the effective MCP inventory | Native process tests covering delayed output, workspace arguments, and error responses; desktop captures remain separately identified |
 | Existing global roles migrate safely | Tests for Astra/Luna routing, custom homes, missing directories, symlinks, and preservation of user provider/permission settings |
 | The package can be published | Full source-bound stamp, pack receipt, provenance, clean live-origin preflight, authenticated maintainer, and successful lifecycle dry run |
-| 10.1.1 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
+| 10.1.2 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
 
-The npm registry reported 10.1.0 as `latest` and 10.1.1 as absent on
-2026-09-06. Neither older release receipts nor synthetic fixtures prove
+The npm registry reported 10.1.1 as `latest` on
+2026-09-07. Neither older release receipts nor synthetic fixtures prove
 current live behavior. Optional physical and image evidence remains optional
 for the direct path and must retain its measured status. See
 [the current release procedure](release-readiness.md#direct-npm-publication).
@@ -171,9 +170,9 @@ Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
 All release artifacts bound to 9.2.7 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 10.0.0 evidence.
+must not be renamed, copied, or treated as 10.1.2 evidence.
 
-New 10.0.0 claims:
+New 10.1.2 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
@@ -246,8 +245,8 @@ New 10.0.0 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 10.0.0 | passed-hermetic | `release:version-truth` 15 surfaces at 10.0.0 after incremental build |
-| The reported 10.0.0 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
+| All checked version authorities report 10.1.2 | passed-hermetic | `release:version-truth` 15 surfaces at 10.1.2 after incremental build |
+| The reported 10.1.2 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
 
 ## 9.1.0 assertion (historical)
 

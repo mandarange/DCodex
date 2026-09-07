@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { setContextManagement } from '../codex/context-management.js';
 import path from 'node:path';
 import { DEFAULT_CODEX_APP_PLUGINS } from '../routes.js';
 import { ensureDir, PACKAGE_VERSION, readText, writeTextAtomic } from '../fsx.js';
@@ -97,6 +98,7 @@ function normalizeCodexFastModeUiConfigOnce(text: any = '', opts: any = {}) {
       if (!hasTomlTable(next, table)) next = upsertTomlTable(next, table, `[${table}]\nenabled = true`);
     }
   }
+  next = setContextManagement(next, true, true);
   return ensureTrailingNewline(next);
 }
 

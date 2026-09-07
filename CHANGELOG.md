@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [10.1.2] - 2026-09-07
+
+### Added
+
+- Enable experimental Codex context management by default during global setup
+  and repair. Add a Settings switch in SKS Center and
+  `sks codex-app context-management status|on|off`; preserve explicit opt-outs.
+  This preference applies to new tasks subject to Codex account/provider support.
+
 ## [10.1.1] - 2026-09-06
 
 ### Added
