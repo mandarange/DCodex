@@ -183,6 +183,40 @@ test('fresh project config receives the official Codex subagent defaults', () =>
   assert.equal(parsed.features.multi_agent_v2.expose_spawn_agent_model_overrides, true)
 })
 
+test('child model normalization preserves selected parent and explicit child effort across config layers', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-official-astra-config-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const codexHome = path.join(root, 'home', '.codex')
+  const projectConfigPath = path.join(root, '.codex', 'config.toml')
+  const globalConfigPath = path.join(codexHome, 'config.toml')
+  await fs.mkdir(path.dirname(projectConfigPath), { recursive: true })
+  await fs.mkdir(codexHome, { recursive: true })
+  const project = 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "max"\n[agents]\ndefault_subagent_model = "gpt-5.6-luna"\ndefault_subagent_reasoning_effort = "low"\n'
+  const global = 'model = "anthropic/claude-sonnet-4.5"\n[agents]\ndefault_subagent_model = "gpt-5.6-terra"\ndefault_subagent_reasoning_effort = "medium"\n'
+  await fs.writeFile(projectConfigPath, project)
+  await fs.writeFile(globalConfigPath, global)
+  const local = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(local.defaultSubagentModel, 'gpt-6-astra')
+  assert.equal(local.defaultSubagentReasoningEffort, 'low')
+  assert.equal(local.sources.defaultSubagentModel, 'default')
+  assert.ok(local.warnings.includes('official_subagent_model_coerced_to_astra:gpt-5.6-luna:project'))
+  assert.equal(await fs.readFile(projectConfigPath, 'utf8'), project)
+  assert.equal(await fs.readFile(globalConfigPath, 'utf8'), global)
+  const merged = parse(mergeOfficialSubagentConfig(project, { inheritedText: global })) as Record<string, any>
+  assert.equal(merged.model, 'gpt-5.6-sol')
+  assert.equal(merged.model_reasoning_effort, 'max')
+  assert.equal(merged.agents.default_subagent_model, 'gpt-6-astra')
+  assert.equal(merged.agents.default_subagent_reasoning_effort, 'low')
+  await fs.writeFile(projectConfigPath, 'model = "gpt-5.6-sol"\n')
+  const inherited = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(inherited.defaultSubagentModel, 'gpt-6-astra')
+  assert.equal(inherited.defaultSubagentReasoningEffort, 'medium')
+  assert.ok(inherited.warnings.includes('official_subagent_model_coerced_to_astra:gpt-5.6-terra:global'))
+  const inheritedMerge = parse(mergeOfficialSubagentConfig('', { inheritedText: global })) as Record<string, any>
+  assert.equal(inheritedMerge.agents.default_subagent_model, 'gpt-6-astra')
+  assert.equal(await fs.readFile(globalConfigPath, 'utf8'), global)
+})
+
 test('project and inherited user concurrency values are preserved', () => {
   for (const value of [3, 20]) {
     const project = mergeOfficialSubagentConfig(`[agents]\nmax_concurrent_threads_per_session = ${value}\n`)
@@ -573,6 +607,7 @@ test('fresh agent install materializes the complete project-scoped custom agent 
     const parsed = parse(text) as Record<string, any>
     assert.equal(parsed.name, role.codex_name)
     assert.equal(parsed.model, role.model)
+    assert.equal(parsed.model, 'gpt-6-astra')
     assert.equal(parsed.model_reasoning_effort, role.model_reasoning_effort)
     assert.equal(Object.hasOwn(parsed, 'sandbox_mode'), role.sandbox === 'read-only')
     assert.equal(parsed.sandbox_mode, role.sandbox)
@@ -895,7 +930,7 @@ test('generated Naruto skill describes the official workflow and retired aliases
   assert.match(naruto, /later root-owned waves/)
   assert.match(naruto, /max_threads defaults to a 256-child frame budget cap, never a target/)
   assert.match(naruto, /max_depth=1 blocks nested delegation/)
-  assert.match(naruto, /Route tiny mechanical and mass shards to Luna Max, broad search and exploration shards to Astra Medium, implementation to Astra High, and judgment to Astra Max/)
+  assert.match(naruto, /Route tiny mechanical and mass shards to Astra Low, broad search and exploration shards to Astra Medium, implementation to Astra High, and judgment to Astra Max/)
   assert.match(naruto, /sks\.core-engineering-directive\.v1/)
   assert.match(naruto, /subagent-plan\.json/)
   assert.match(naruto, /subagent-parent-summary\.json/)
@@ -904,7 +939,7 @@ test('generated Naruto skill describes the official workflow and retired aliases
   assert.doesNotMatch(naruto, /native shadow-clone|up to 100|--backend codex-exec|--clones N/)
   assert.match(agentsRules, /Use `\$sks-naruto` for explicitly requested parallel work or concrete independent slices/)
   assert.match(agentsRules, /reuse capacity across root-owned waves/)
-  assert.match(agentsRules, /Luna Max for tiny mechanical work/)
+  assert.match(agentsRules, /Astra Low for tiny mechanical work/)
   assert.match(agentsRules, /Astra High for implementation/)
   assert.match(agentsRules, /Astra Medium for read-heavy context/)
   assert.match(agentsRules, /Astra Max only for focused judgment/)

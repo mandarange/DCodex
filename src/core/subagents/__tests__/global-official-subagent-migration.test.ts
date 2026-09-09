@@ -15,16 +15,17 @@ import {
 import { refreshGlobalOfficialSubagentAgentConfigs } from '../official-subagent-config.js'
 
 function previousManagedRole(role: ManagedOfficialSubagentRole): string {
-  const previousModel = role.model_policy === 'terra_max_context_tools' ? 'gpt-5.6-terra' : 'gpt-5.6-sol'
+  const previousModel = role.model_policy === 'luna_max_mechanical' ? 'gpt-5.6-luna'
+    : role.model_policy === 'terra_max_context_tools' ? 'gpt-5.6-terra' : 'gpt-5.6-sol'
   const body = managedOfficialSubagentRoleBody(role)
     .replace('model = "gpt-6-astra"', `model = "${previousModel}"`)
-    .replace('model_reasoning_effort = "medium"', 'model_reasoning_effort = "max"')
+    .replace(/model_reasoning_effort = "(?:low|medium)"/, 'model_reasoning_effort = "max"')
   return managedOfficialSubagentRoleContent(role)
     .replace(managedOfficialSubagentRoleBody(role), body)
     .replace(/sks_managed_body_sha256 = "[a-f0-9]+"/, `sks_managed_body_sha256 = "${sha256(body)}"`)
 }
 
-test('global refresh migrates the previous managed catalog, preserves Luna, and is idempotent', async (t) => {
+test('global refresh migrates every previous managed model to Astra with role effort and is idempotent', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-global-role-migration-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
   const codexHome = path.join(root, 'custom-codex-home')
@@ -35,12 +36,12 @@ test('global refresh migrates the previous managed catalog, preserves Luna, and 
   }
   const before = await fs.readFile(path.join(agentsDir, 'explorer.toml'), 'utf8')
   const plan = await refreshGlobalOfficialSubagentAgentConfigs(codexHome, { apply: false })
-  assert.equal(plan.stale.length, 24)
-  assert.equal(plan.existing.length, 1)
+  assert.equal(plan.stale.length, 25)
+  assert.equal(plan.existing.length, 0)
   assert.equal(await fs.readFile(path.join(agentsDir, 'explorer.toml'), 'utf8'), before)
   const result = await refreshGlobalOfficialSubagentAgentConfigs(codexHome, { apply: true })
   assert.equal(result.ok, true)
-  assert.equal(result.updated.length, 24)
+  assert.equal(result.updated.length, 25)
   assert.deepEqual(result.created, [])
   for (const role of MANAGED_OFFICIAL_SUBAGENT_ROLES) {
     assert.equal(await fs.readFile(path.join(agentsDir, role.filename), 'utf8'), managedOfficialSubagentRoleContent(role))

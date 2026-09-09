@@ -1,5 +1,16 @@
-# Release Proof Truth — 10.1.3
-## Current assertion
+# Release Proof Truth — 10.1.4
+
+## Current candidate: 10.1.4
+
+10.1.4 changes managed child routing to GPT-6 Astra with low, medium, high,
+and max effort by task. The final candidate requires fresh routing checks,
+version truth, canonical tests, release DAG, build, stamp, and pack receipt.
+No 10.1.4 publication or installed-runtime proof is claimed here. The 10.1.3
+records below retain their original version and evidence scope.
+
+## Historical 10.1.3 assertions
+
+### Original candidate assertion
 
 10.1.3 is a release candidate. Source changes and version metadata do not
 authorize publication. The final clean candidate commit must have a passing

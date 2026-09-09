@@ -11,7 +11,7 @@ export interface DollarCommandAliasLiteEntry {
   app_skill: string;
 }
 
-const NARUTO_DESCRIPTION = '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, preserve Luna/Astra child role models, and honor explicit counts and measured host limits. max_threads is a cap, never a target.';
+const NARUTO_DESCRIPTION = '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, use Astra for every child and vary only effort by task, and honor explicit counts and measured host limits. max_threads is a cap, never a target.';
 const COMPUTER_USE_DESCRIPTION = 'Maximum-speed Codex Computer Use lane for native macOS, desktop-app, OS-settings, and non-web visual tasks only. Browser, localhost, website, webapp, and web-based app verification must route through Codex Chrome Extension readiness first.';
 
 const DOLLAR_COMMANDS_LITE_BASE = [

@@ -19,7 +19,7 @@ test('installed Codex agent catalog exposes only current official roles', async 
     const parsed = parse(text);
     assert.equal(parsed.name, role.codex_name);
     assert.equal(parsed.model, role.model);
-    assert.equal(parsed.model, role.codex_name === 'worker' ? 'gpt-5.6-luna' : 'gpt-6-astra');
+    assert.equal(parsed.model, 'gpt-6-astra');
     assert.equal(parsed.model_reasoning_effort, role.model_reasoning_effort);
     assert.equal(Object.hasOwn(parsed, 'model_policy'), false);
     assert.equal(Object.hasOwn(parsed, 'sandbox_mode'), role.sandbox === 'read-only');
@@ -129,3 +129,86 @@ async function findFile(root, name) {
   }
   return null;
 }
+
+test('persisted legacy and routed role models resolve to Astra without mutating the stored preferences', async () => {
+  const preferences = await import('../../dist/core/subagents/role-model-preferences.js');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-astra-preferences-'));
+  const filePath = path.join(root, 'role-models.json');
+  const original = JSON.stringify({
+    schema: 'sks.role-model-preferences.v2', version: 2, updated_at: '2026-09-08',
+    roles: {
+      worker: { provider: 'openai', model: 'gpt-5.6-luna', reasoning_effort: 'max' },
+      implementation_specialist: { provider: 'openai', model: 'gpt-5.6-sol', reasoning_effort: 'high' },
+      explorer: { provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'max' },
+      expert: { provider: 'anthropic', model: 'anthropic/claude-sonnet-4.5', reasoning_effort: 'high' },
+      debugger: { provider: 'openai', model: 'gpt-6-astra', reasoning_effort: 'high' }
+    }
+  });
+  await fs.writeFile(filePath, original);
+  const read = await preferences.readRoleModelPreferences({ filePath });
+  assert.deepEqual(read.blockers, []);
+  assert.ok(Object.values(read.store.roles).every((role) => role.model === 'gpt-6-astra' && role.provider === 'openai'));
+  assert.deepEqual(Object.fromEntries(Object.entries(read.store.roles).map(([name, role]) => [name, role.reasoning_effort])), {
+    worker: 'low', implementation_specialist: 'high', explorer: 'medium', expert: 'max', debugger: 'high'
+  });
+  assert.equal(await fs.readFile(filePath, 'utf8'), original);
+});
+
+test('role choices offer only Astra and preserve a non-Astra parent selection', async () => {
+  const preferences = await import('../../dist/core/subagents/role-model-preferences.js');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-astra-status-'));
+  const configPath = path.join(root, 'config.toml');
+  const filePath = path.join(root, 'role-models.json');
+  const parentConfig = 'model = "gpt-5.6-sol"\nmodel_provider = "openai"\nmodel_reasoning_effort = "max"\n';
+  await fs.writeFile(configPath, parentConfig);
+  const status = await preferences.roleModelPreferencesStatus({ filePath, configPath });
+  assert.equal(status.routing.selected_model, 'gpt-5.6-sol');
+  assert.equal(status.routing.active_main_model_inherited, false);
+  assert.ok(status.roles.every((role) => role.effective_model === 'gpt-6-astra'));
+  assert.deepEqual(status.supported_profiles.map((profile) => profile.reasoning_effort).sort(), ['high', 'low', 'max', 'medium']);
+  assert.ok(status.supported_profiles.every((profile) => profile.model === 'gpt-6-astra'));
+  const rejected = await preferences.setRoleModelPreference({ filePath, configPath, role: 'worker', model: 'gpt-5.6-luna', reasoning: 'max' });
+  assert.deepEqual(rejected.blockers, ['role_model_astra_required']);
+  await assert.rejects(fs.access(filePath));
+  const saved = await preferences.setRoleModelPreference({ filePath, configPath, role: 'worker', model: 'gpt-6-astra', reasoning: 'low' });
+  assert.equal(saved.ok, true);
+  assert.equal((await preferences.readRoleModelPreferences({ filePath })).store.roles.worker.reasoning_effort, 'low');
+  assert.equal(await fs.readFile(configPath, 'utf8'), parentConfig);
+});
+
+test('official child defaults override stale local and inherited models while leaving parent and effort intact', async () => {
+  const config = await import('../../dist/core/subagents/official-subagent-config.js');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-astra-default-'));
+  const projectConfigPath = path.join(root, 'config.toml');
+  const parent = 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "max"\n';
+  const original = parent + '[agents]\ndefault_subagent_model = "gpt-5.6-luna"\ndefault_subagent_reasoning_effort = "medium"\n';
+  const merged = parse(config.mergeOfficialSubagentConfig(original));
+  assert.equal(merged.model, 'gpt-5.6-sol');
+  assert.equal(merged.model_reasoning_effort, 'max');
+  assert.equal(merged.agents.default_subagent_model, 'gpt-6-astra');
+  assert.equal(merged.agents.default_subagent_reasoning_effort, 'medium');
+  assert.equal(parse(config.mergeOfficialSubagentConfig(parent, { inheritedText: '[agents]\ndefault_subagent_model = "gpt-5.6-terra"\n' })).agents.default_subagent_model, 'gpt-6-astra');
+  await fs.writeFile(projectConfigPath, original);
+  const read = await config.readOfficialSubagentConfig(root, { projectConfigPath, codexHome: path.join(root, 'codex-home') });
+  assert.equal(read.defaultSubagentModel, 'gpt-6-astra');
+  assert.equal(read.defaultSubagentReasoningEffort, 'medium');
+  assert.ok(read.warnings.some((warning) => warning.startsWith('official_subagent_model_coerced_to_astra:')));
+  assert.equal(await fs.readFile(projectConfigPath, 'utf8'), original);
+});
+
+test('managed installed worker models refresh to Astra low', async () => {
+  const manifest = await import('../../dist/core/managed-assets/managed-assets-manifest.js');
+  const config = await import('../../dist/core/subagents/official-subagent-config.js');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-astra-refresh-'));
+  const worker = manifest.MANAGED_OFFICIAL_SUBAGENT_ROLES.find((role) => role.codex_name === 'worker');
+  const filePath = path.join(root, '.codex', 'agents', worker.filename);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const old = manifest.managedOfficialSubagentRoleContent({ ...worker, model: 'gpt-5.6-luna', model_reasoning_effort: 'max' });
+  await fs.writeFile(filePath, old);
+  const result = await config.installOfficialSubagentAgentConfigs(root, { apply: true });
+  assert.equal(result.ok, true);
+  assert.ok(result.updated.includes(`.codex/agents/${worker.filename}`));
+  const current = parse(await fs.readFile(filePath, 'utf8'));
+  assert.equal(current.model, 'gpt-6-astra');
+  assert.equal(current.model_reasoning_effort, 'low');
+});

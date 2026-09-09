@@ -59,7 +59,7 @@ test('Naruto parser admits documented host/model flags only on run actions', () 
       'gpt-5.6-sol',
       '--parent-effort=max',
       '--subagent-model',
-      'gpt-5.6-terra',
+      'gpt-6-astra',
       '--subagent-effort=max',
       '--no-forced-login-method'
     ])
@@ -124,7 +124,7 @@ test('Naruto parser accepts top-level and subcommand-local help without position
 })
 
 test('Naruto help does not erase unknown or malformed options', () => {
-  const unknown = parseNarutoArgs(['run', 'task', '--model', 'gpt-5.6-terra', '--help'])
+  const unknown = parseNarutoArgs(['run', 'task', '--model', 'gpt-6-astra', '--help'])
   assert.equal(unknown.action, 'help')
   assert.ok(unknown.argumentErrors.includes('unsupported_argument:--model'))
 

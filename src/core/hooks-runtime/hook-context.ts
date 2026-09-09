@@ -34,7 +34,7 @@ const OFFICIAL_SUBAGENT_SPAWN_COMPATIBILITY_CONTEXT = [
   'SKS Codex 0.145 official-subagent spawn compatibility:',
   '- Full-history forks (`fork_turns="all"`, including the omitted/default full-history mode) inherit the parent agent type, model, and reasoning effort.',
   '- When selecting a custom `agent_type` or overriding `model`/`reasoning_effort`, set `fork_turns="none"` or a positive bounded turn count and put the complete bounded slice contract in `message`.',
-  '- Use a full-history fork only when `agent_type`, `model`, and `reasoning_effort` are all omitted.'
+  '- SKS children must use explicit `model=\"gpt-6-astra\"`, task-appropriate `reasoning_effort`, and `fork_turns=\"none\"` or a positive bounded turn count. Do not use omitted/default or full-history forks, which can inherit a non-Astra parent.'
 ].join('\n');
 
 export function officialSubagentSpawnCompatibilityContext() {

@@ -21,7 +21,7 @@ printf '%s' '<sks.subagent-parent-summary.v1 JSON>' \
 
 Automatic fan-out starts at four Naruto children for bounded non-trivial work, six for
 explicitly parallel work, eight for large-scale work, and sixteen for mass mechanical or exploration
-fan-out on the Luna/Astra Medium lanes. After decomposition the parent may resize either lane
+fan-out on the Astra Low/Medium lanes. After decomposition the parent may resize either lane
 up to 256 children, but only when every additional slice is independent, useful, and
 verifiable. Explicit `--agents N` and
 `--max-threads N` values from 1 through 256 are authoritative and are not reduced to
@@ -33,9 +33,9 @@ time. A Codex multi-agent V2 host may count the root separately and therefore re
 active limiter and must be reported instead of being presented as SKS-selected 256
 concurrency. Remaining requested work reuses returned capacity in later waves.
 
-Luna Max handles tiny mechanical shards, Astra Medium handles broad search and
+Astra Low handles tiny mechanical shards, Astra Medium handles broad search and
 exploration shards, and Astra High and Max handle implementation and judgment. The
-four-profile matrix (Luna Max / Astra Medium / Astra High / Astra Max) is a **routing LOD**, not an
+four-profile matrix (Astra Low / Astra Medium / Astra High / Astra Max) is a **routing LOD**, not an
 agent-count cap.
 
 `SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` declares the provider/API
@@ -89,7 +89,7 @@ correlation and never grants project trust, so App host-capability requests requ
 | Judgment lane | Astra Max | Architecture, debugging, security, database, release, and ambiguous work |
 | Implementation lane | Astra High | Ordinary UI, backend, logic, core, and native implementation |
 | Context/tool lane | Astra Medium | Large documents, logs, long-term memory, repository exploration, rapid large-scale first-draft code processing, plus Browser, Computer Use, and image execution |
-| Mechanical lane | Luna Max | Tiny, short-context work with clear completion conditions and strong automatic verification |
+| Mechanical lane | Astra Low | Tiny, short-context work with clear completion conditions and strong automatic verification |
 
 Mixed work is split when practical. If a slice cannot safely separate execution
 from judgment, Astra Max owns it. SKS never silently substitutes another model or

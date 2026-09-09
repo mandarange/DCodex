@@ -82,7 +82,7 @@ export const MANAGED_OFFICIAL_SUBAGENT_ROLES: readonly ManagedOfficialSubagentRo
     filename: 'worker.toml',
     aliases: ['worker'],
     codexName: 'worker',
-    description: 'Luna Max execution subagent only for tiny, short-context, mechanical work with an explicit done condition.',
+    description: 'Astra Low execution subagent only for tiny, short-context, mechanical work with an explicit done condition.',
     policy: 'luna_max_mechanical',
     keywords: ['tiny', 'short context', 'single file', 'mechanical', 'repeatable', 'exact rename', 'format only', 'typo', 'simple search', 'typing', '단순 검색', '타이핑'],
     nicknames: ['Kite', 'Moss', 'Pico', 'Reed', 'Vale', 'Wren'],
@@ -153,7 +153,7 @@ Return a concise result, evidence, risks, and next action.`
     instructions: `You are the read-only code explorer.
 
 Map only the code paths relevant to the assigned question.
-Prefer targeted search and exact symbol references, but use this role for repository-wide or long-context scans that would be unsafe for Luna.
+Prefer targeted search and exact symbol references, but use this role for repository-wide or long-context scans that would be unsuitable for tiny mechanical slices.
 Identify entry points, state transitions, owners, and evidence gaps.
 Do not propose a broad redesign and do not edit files.
 Return concise findings with exact paths and symbols.`

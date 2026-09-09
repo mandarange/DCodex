@@ -1,6 +1,14 @@
-# SKS 10.1.3 Release Readiness
+# SKS 10.1.4 Release Readiness
 
-## Current release
+## Current candidate
+
+10.1.4 enforces GPT-6 Astra for all managed child agents. Effort follows the
+assigned work: low for tiny mechanical tasks, medium for reads, exploration,
+and tool operation, high for implementation, and max for judgment. Active
+parent settings remain unchanged. Publication requires fresh release evidence
+for the final 10.1.4 candidate; the 10.1.3 records below do not verify this patch.
+
+## Previous release: 10.1.3
 
 10.1.3 fixes Codex-LB priority for ordinary Codex App Responses WebSockets.
 An upgrade has no model; the bridge now chooses the upstream from the first

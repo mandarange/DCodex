@@ -12,9 +12,8 @@ import {
   normalizeCodexReasoningEffort,
   readConfiguredCodexModelRoutingContext
 } from '../codex-app/codex-model-catalog.js';
-import { childInheritsActiveMainModel } from '../provider/model-router.js';
 import { isRecord } from '../json/records.js';
-import { SUBAGENT_MODEL_POLICIES } from './model-policy.js';
+import { ASTRA_SUBAGENT_MODEL, SUBAGENT_MODEL_POLICIES } from './model-policy.js';
 
 export const ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v2' as const;
 const LEGACY_ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v1';
@@ -79,11 +78,13 @@ export async function readRoleModelPreferences(input: {
         blockers.push(`role_model_preference_invalid_profile:${role.codex_name}`);
         continue;
       }
-      const migrated = migratedManagedRoleModelProfile(provider, model, reasoning);
+      // Persisted model choices cannot override the managed child model policy.
+      // Reads migrate effective values only and leave the stored document intact.
+      const keepEffort = provider === 'openai' && isSupportedRoleModelProfile(model, reasoning);
       roles[role.codex_name] = {
-        provider,
-        model: migrated?.model || model,
-        reasoning_effort: migrated?.modelReasoningEffort || reasoning,
+        provider: 'openai',
+        model: ASTRA_SUBAGENT_MODEL,
+        reasoning_effort: keepEffort ? reasoning : role.model_reasoning_effort,
         updated_at: String(rawPreference.updated_at || parsed.updated_at || '')
       };
     }
@@ -103,20 +104,6 @@ export async function readRoleModelPreferences(input: {
   }
 }
 
-function migratedManagedRoleModelProfile(provider: string, model: string, reasoning: string) {
-  // Translate only the replaced managed choices in memory; user-owned routed
-  // profiles and the stored document remain unchanged during reads.
-  if (provider !== 'openai') return null;
-  if (model === 'gpt-5.6-sol') {
-    if (reasoning === 'high') return SUBAGENT_MODEL_POLICIES.sol_high_implementation;
-    if (reasoning === 'max') return SUBAGENT_MODEL_POLICIES.sol_max_judgment;
-  }
-  if (model === 'gpt-5.6-terra' && reasoning === 'max') {
-    return SUBAGENT_MODEL_POLICIES.terra_max_context_tools;
-  }
-  return null;
-}
-
 export async function roleModelPreferencesStatus(input: {
   readonly env?: NodeJS.ProcessEnv;
   readonly filePath?: string;
@@ -132,53 +119,19 @@ export async function roleModelPreferencesStatus(input: {
   });
   const catalog = routing.catalog;
   const routerSelected = routing.selected_provider === 'sks-router';
-  const activeMainModel = routing.selected_provider && routing.selected_model
-    ? {
-        provider: routing.selected_provider,
-        model: routing.selected_model
-      }
-    : null;
-  const preferenceBlockers = Object.entries(read.store.roles).flatMap(([role, preference]) => {
-    const routed = preference.provider !== 'openai' || preference.model.includes('/');
-    if (!routed) {
-      return isSupportedRoleModelProfile(preference.model, preference.reasoning_effort)
-        ? []
-        : [`role_model_preference_not_managed:${role}`];
-    }
-    if (!routerSelected) return [`role_model_router_not_selected:${role}`];
-    const entry = catalog.models.find((model) => model.model === preference.model);
-    if (!catalog.ok || !entry) return [`role_model_preference_not_in_active_catalog:${role}`];
-    if (!entry.reasoning_efforts.includes(preference.reasoning_effort)) {
-      return [`role_model_preference_reasoning_not_in_active_catalog:${role}`];
-    }
-    return entry.multi_agent_version === 'v2'
+  const preferenceBlockers = Object.entries(read.store.roles).flatMap(([role, preference]) => (
+    isSupportedRoleModelProfile(preference.model, preference.reasoning_effort)
       ? []
-      : [`role_model_preference_multi_agent_v2_required:${role}`];
-  });
-  const catalogProfiles = (routerSelected ? catalog.models : [])
-    .filter((entry) => entry.multi_agent_version === 'v2')
-    .flatMap((entry) => (
-    entry.reasoning_efforts.map((reasoning) => ({
-      provider: entry.provider,
-      model: entry.model,
-      reasoning_effort: reasoning,
-      source: 'codex-model-catalog'
-    }))
-    ));
+      : [`role_model_preference_not_managed:${role}`]
+  ));
   const allProfiles = dedupeProfiles([
-    ...SUPPORTED_ROLE_MODEL_PROFILES,
-    ...catalogProfiles
+    ...SUPPORTED_ROLE_MODEL_PROFILES
   ]);
   const supportedProfiles = allProfiles.slice(0, ROLE_MODEL_PROFILE_PRESENTATION_LIMIT);
   const roles = MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => {
     const override = read.store.roles[role.codex_name] || null;
-    const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model);
-    const effectiveProvider = override?.provider
-      || (inheritActiveMain ? activeMainModel?.provider : null)
-      || inferProviderFromModel(role.model);
-    const effectiveModel = override?.model
-      || (inheritActiveMain ? activeMainModel?.model : null)
-      || role.model;
+    const effectiveProvider = 'openai';
+    const effectiveModel = ASTRA_SUBAGENT_MODEL;
     const effectiveReasoning = override?.reasoning_effort || role.model_reasoning_effort;
     return {
       role: role.codex_name,
@@ -190,11 +143,7 @@ export async function roleModelPreferencesStatus(input: {
       effective_provider: effectiveProvider,
       effective_model: effectiveModel,
       effective_reasoning_effort: effectiveReasoning,
-      effective_source: override
-        ? 'role-override'
-        : inheritActiveMain
-          ? 'selected-main-model'
-          : 'managed-default'
+      effective_source: override ? 'role-override' : 'managed-default'
     };
   });
   return {
@@ -208,7 +157,7 @@ export async function roleModelPreferencesStatus(input: {
     routing: {
       selected_provider: routing.selected_provider,
       selected_model: routing.selected_model,
-      active_main_model_inherited: childInheritsActiveMainModel(activeMainModel?.model),
+      active_main_model_inherited: false,
       router_selected: routerSelected,
       runtime_verified: false
     },
@@ -261,6 +210,7 @@ export async function setRoleModelPreference(input: {
   const model = normalizeCodexModelId(input.model);
   const reasoning = normalizeCodexReasoningEffort(input.reasoning);
   if (!model || !reasoning) return mutationBlocked('role_model_profile_invalid');
+  if (model !== ASTRA_SUBAGENT_MODEL) return mutationBlocked('role_model_astra_required');
 
   const env = input.env || process.env;
   const routing = await readConfiguredCodexModelRoutingContext({
@@ -272,33 +222,10 @@ export async function setRoleModelPreference(input: {
   const catalogEntry = catalog.models.find((entry) => entry.model === model) || null;
   const requestedProvider = normalizeRoleProvider(input.provider);
   if (input.provider && !requestedProvider) return mutationBlocked('role_model_provider_invalid');
-  if (requestedProvider && catalogEntry && requestedProvider !== catalogEntry.provider) {
-    return mutationBlocked('role_model_provider_mismatch');
-  }
-  const provider = requestedProvider || catalogEntry?.provider || inferProviderFromModel(model);
-  const routedModel = provider !== 'openai' || model.includes('/');
-  const managedProfile = SUPPORTED_ROLE_MODEL_PROFILES.some((profile) => (
-    profile.provider === provider
-    && profile.model === model
-    && profile.reasoning_effort === reasoning
-  ));
-  if (!routedModel && !managedProfile) {
+  if (requestedProvider && requestedProvider !== 'openai') return mutationBlocked('role_model_provider_mismatch');
+  const provider = 'openai';
+  if (!isSupportedRoleModelProfile(model, reasoning)) {
     return mutationBlocked('role_model_profile_not_managed');
-  }
-  if (routedModel && routing.selected_provider !== 'sks-router') {
-    return mutationBlocked('role_model_router_not_selected');
-  }
-  if (routedModel && !catalog.ok) {
-    return mutationBlocked('role_model_catalog_required_for_routed_model', ...catalog.blockers);
-  }
-  if (routedModel && !catalogEntry) {
-    return mutationBlocked('role_model_not_in_active_catalog');
-  }
-  if (catalogEntry && !catalogEntry.reasoning_efforts.includes(reasoning)) {
-    return mutationBlocked('role_model_reasoning_not_in_catalog');
-  }
-  if (routedModel && catalogEntry?.multi_agent_version !== 'v2') {
-    return mutationBlocked('role_model_multi_agent_v2_required');
   }
 
   const read = await readRoleModelPreferences(input);

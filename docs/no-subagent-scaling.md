@@ -4,10 +4,10 @@
 SKS no longer treats native child-process count, PID overlap, terminal display count,
 or a custom active pool as Naruto completion evidence.
 
-The canonical policy is:
+All managed children use GPT-6 Astra; the canonical effort policy is:
 
 - standalone parent: GPT-6 Astra with `model_reasoning_effort="max"`; active Codex tasks keep their selected model and effort
-- tiny short-context mechanical worker: GPT-5.6 Luna with `model_reasoning_effort="max"`
+- tiny short-context mechanical worker: GPT-6 Astra with `model_reasoning_effort="low"`
 - ordinary implementation: GPT-6 Astra with `model_reasoning_effort="high"`
 - review, debugging, planning, architecture, security, database, research,
   release, ambiguity, and judgment: GPT-6 Astra with `model_reasoning_effort="max"`
@@ -16,7 +16,7 @@ The canonical policy is:
   image-generation execution: GPT-6 Astra with `model_reasoning_effort="medium"`
 - mixed work is split by execution versus judgment when possible; an
   unsplittable mixed slice uses Astra Max
-- automatic requested children start at 4 for bounded non-trivial work, 6 for explicit parallel work, 8 for large-scale work, and 16 for mass mechanical or exploration work on the Luna/Astra Medium lanes; after decomposition either lane may expand to 256 only when ready DAG width, disjoint ownership, verifier/tool capacity, real host slots, and positive marginal usefulness all permit it
+- automatic requested children start at 4 for bounded non-trivial work, 6 for explicit parallel work, 8 for large-scale work, and 16 for mass mechanical or exploration work on the Astra Low/Medium lanes; after decomposition either lane may expand to 256 only when ready DAG width, disjoint ownership, verifier/tool capacity, real host slots, and positive marginal usefulness all permit it
 - reviewer-only fan-out: at most 2 for ordinary work and 3 for critical multi-domain review
 - explicit `--agents N` and `--max-threads N` values from 1 through 256 remain authoritative when the operator supplies them
 - default `agents.max_concurrent_threads_per_session`: 256 child slots for fresh SKS-owned project config when Codex multi-agent V2 is available

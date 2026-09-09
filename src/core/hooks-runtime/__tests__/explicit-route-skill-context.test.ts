@@ -200,7 +200,8 @@ test('persisted explicit alias skills survive compact resume and PreToolUse with
       tool_use_id: 'explicit-fast-off-tool'
     }, { root, state });
     assert.equal(preTool.continue, true);
-    assert.match(String(preTool.additionalContext || ''), new RegExp(escapeRegExp(skillPath)));
+    // SessionStart supplies paths; ordinary PreToolUse revalidates without repeating them.
+    assert.equal(String(preTool.additionalContext || ''), '');
 
     const child: any = await evaluateHookPayload('subagent-start', {
       cwd: root,

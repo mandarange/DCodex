@@ -17,7 +17,6 @@ export function buildPreToolUseContinue(options: { additionalContext?: string; s
 export function buildPreToolUseDeny(reason: unknown, options: { systemMessage?: string } = {}): CodexHookOutput {
   const trimmed = requiredReason(reason, 'PreToolUse deny requires a non-empty reason');
   return withOptionalSystemMessage({
-    continue: true,
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',

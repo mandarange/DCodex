@@ -80,42 +80,31 @@ test('--no-forced-login-method releases the login without switching provider', (
   assert.deepEqual(narutoCredentialConfigArgs(resolved), ['-c', 'model_provider="openai"'])
 })
 
-test('model and effort overrides reach the codex arguments', () => {
+test('Astra child effort overrides reach the codex arguments independently of the parent', () => {
   const resolved = policy([
-    '--parent-model', 'gpt-5.6-terra',
-    '--parent-effort', 'max',
-    '--subagent-model', 'gpt-5.6-luna',
-    '--subagent-effort', 'max'
+    '--parent-model', 'gpt-5.6-terra', '--parent-effort', 'max',
+    '--subagent-model', 'gpt-6-astra', '--subagent-effort', 'low'
   ])
   assert.equal(resolved.parentModel, 'gpt-5.6-terra')
-  assert.equal(resolved.parentEffort, 'max')
+  assert.deepEqual(resolved.blockers, [])
   const args = buildOfficialSubagentCodexArgs({
-    prompt: 'task',
-    maxThreads: 2,
-    parentSummaryFile: '/tmp/summary.txt',
-    credentialPolicy: resolved
+    prompt: 'task', maxThreads: 2, parentSummaryFile: '/tmp/summary.txt', credentialPolicy: resolved
   })
   assert.ok(args.includes('gpt-5.6-terra'))
-  assert.ok(args.includes('model_reasoning_effort="max"'))
-  assert.ok(args.includes('agents.default_subagent_model="gpt-5.6-luna"'))
-  assert.ok(args.includes('agents.default_subagent_reasoning_effort="max"'))
+  assert.ok(args.includes('agents.default_subagent_model="gpt-6-astra"'))
+  assert.ok(args.includes('agents.default_subagent_reasoning_effort="low"'))
 })
 
-test('managed child model overrides enforce the Luna and Astra effort profiles', () => {
-  assert.ok(policy([
-    '--subagent-model', 'gpt-5.6-luna',
-    '--subagent-effort', 'low'
-  ]).blockers.includes('naruto_subagent_gpt56_effort_policy_mismatch:gpt-5.6-luna:low:allowed_max'))
-  for (const effort of ['medium', 'high', 'max']) {
-    assert.deepEqual(policy([
-      '--subagent-model', 'gpt-6-astra',
-      '--subagent-effort', effort
-    ]).blockers, [], effort)
+test('child model flags and environment reject non-Astra without changing parent selection', () => {
+  for (const model of ['gpt-5.6-luna', 'gpt-5.6-sol', 'anthropic/claude-sonnet-4.5']) {
+    for (const resolved of [policy(['--subagent-model', model]), policy([], { SKS_NARUTO_SUBAGENT_MODEL: model })]) {
+      assert.ok(resolved.blockers.some((blocker) => blocker === 'naruto_subagent_model_must_be_astra' || blocker.startsWith('naruto_subagentModel_invalid:')))
+      assert.equal(resolved.subagentModel, 'gpt-6-astra')
+    }
   }
-  assert.ok(policy([
-    '--subagent-model', 'gpt-6-astra',
-    '--subagent-effort', 'low'
-  ]).blockers.includes('naruto_subagent_gpt56_effort_policy_mismatch:gpt-6-astra:low:allowed_medium_or_high_or_max'))
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']) {
+    assert.deepEqual(policy(['--subagent-model', 'gpt-6-astra', '--subagent-effort', effort]).blockers, [], effort)
+  }
 })
 
 test('legacy explicit parent overrides retain their prior effort validation', () => {

@@ -106,9 +106,9 @@ export interface OfficialSubagentAgentInstallResult {
 }
 
 /**
- * Merge project-scoped Codex multi-agent V2 defaults without overriding explicit
- * project or inherited global values. Migrates legacy `agents.max_threads` and
- * strips removed `job_max_runtime_seconds` only when SKS ownership is proven.
+ * Merge project-scoped Codex multi-agent V2 defaults, enforcing the managed
+ * child model while preserving other explicit project or inherited global values.
+ * Migrates legacy `agents.max_threads` and strips removed `job_max_runtime_seconds` only when SKS ownership is proven.
  */
 export function mergeOfficialSubagentConfig(
   text: string = '',
@@ -170,10 +170,11 @@ export function mergeOfficialSubagentConfigResult(
     'interrupt_message',
     `interrupt_message = ${DEFAULT_OFFICIAL_SUBAGENT_INTERRUPT_MESSAGE}`
   )
-  next = upsertDefaultUnlessInherited(
+  // The child model is fixed independently of the user's parent model and
+  // obsolete project/global child defaults. Effort remains separately selected.
+  next = upsertTomlTableKey(
     next,
-    inheritedAgents,
-    'default_subagent_model',
+    'agents',
     `default_subagent_model = "${DEFAULT_OFFICIAL_SUBAGENT_MODEL}"`
   )
   next = upsertDefaultUnlessInherited(
@@ -382,8 +383,10 @@ export async function readOfficialSubagentConfig(
     )
   }
 
+  const modelCoerced = defaultSubagentModel.value !== DEFAULT_OFFICIAL_SUBAGENT_MODEL
   const depthCoerced = maxDepth.value > 1
   const warnings = [
+    ...(modelCoerced ? [`official_subagent_model_coerced_to_astra:${defaultSubagentModel.value}:${defaultSubagentModel.source}`] : []),
     ...(depthCoerced ? [`official_subagent_max_depth_coerced_to_one:${maxDepth.value}:${maxDepth.source}`] : []),
     ...capacityNormalizationWarnings(maxThreads, multiAgentV2),
     ...(projectLayer.legacyWarnings),
@@ -396,7 +399,7 @@ export async function readOfficialSubagentConfig(
     maxDepth: depthCoerced ? DEFAULT_OFFICIAL_SUBAGENT_MAX_DEPTH : maxDepth.value,
     jobMaxRuntimeSeconds: null,
     interruptMessage: interruptMessage.value,
-    defaultSubagentModel: defaultSubagentModel.value,
+    defaultSubagentModel: DEFAULT_OFFICIAL_SUBAGENT_MODEL,
     defaultSubagentReasoningEffort: defaultSubagentReasoningEffort.value,
     multiAgentV2: effectiveMultiAgentV2,
     sources: {
@@ -404,7 +407,7 @@ export async function readOfficialSubagentConfig(
       maxThreads: maxThreads.source,
       maxDepth: depthCoerced ? 'default' : maxDepth.source,
       interruptMessage: interruptMessage.source,
-      defaultSubagentModel: defaultSubagentModel.source,
+      defaultSubagentModel: modelCoerced ? 'default' : defaultSubagentModel.source,
       defaultSubagentReasoningEffort: defaultSubagentReasoningEffort.source,
       multiAgentV2: multiAgentV2.source
     },

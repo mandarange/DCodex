@@ -275,7 +275,7 @@ export const ROUTES = [
     command: '$Naruto',
     mode: 'NARUTO',
     route: 'Codex official subagent workflow',
-    description: '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and scoped verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, preserve the Luna/Astra child role models, honor explicit counts and measured host limits, and reuse returned capacity.',
+    description: '$Naruto runs explicit parallel work through Codex official subagents. The selected parent owns decomposition, integration, and scoped verification; standalone launches default to GPT-6 Astra. Delegate independent slices with disjoint writes, preserve the Astra-only child role profiles, honor explicit counts and measured host limits, and reuse returned capacity.',
     requiredSkills: ['naruto', 'pipeline-runner', 'prompt-pipeline', 'honest-mode'],
     dollarAliases: ['$Work'],
     appSkillAliases: ['work', 'from-chat-img'],
@@ -748,7 +748,7 @@ export const COMMAND_CATALOG = [
   { name: 'wiki', usage: 'sks wiki coords|pack|refresh|publish|rebuild-index|validate|validate-shared|wrongness ...', description: 'Build, refresh, publish shared shards, rebuild ignored indexes, validate, and attach wrongness-memory context to RGBA/trig LLM Wiki packs with attention.use_first and attention.hydrate_first for compact recall plus source hydration.' },
   { name: 'memory', usage: 'sks memory build [--json] | sks memory gc [--dry-run]', description: 'Project TriWiki context-pack memory into managed AGENTS.md blocks or run bounded memory cleanup.' },
   { name: 'hproof', usage: 'sks hproof check [mission-id|latest]', description: 'Evaluate the H-Proof done gate for a mission.' },
-  { name: 'naruto', usage: 'sks naruto run \"task\" [--agents N] [--max-threads N] [--trusted-project] [--json] | sks naruto status|subagents|proof [latest|M-...] [--json] | sks naruto parent-summary --mission M-... --stdin [--json]', description: 'Run or inspect the Codex official subagent workflow with an Astra standalone parent default and Luna Max mechanical, Astra High implementation, Astra Max judgment, and Astra Medium long-context/tool profiles, max_depth=1, and structured parent-thread completion evidence.' },
+  { name: 'naruto', usage: 'sks naruto run \"task\" [--agents N] [--max-threads N] [--trusted-project] [--json] | sks naruto status|subagents|proof [latest|M-...] [--json] | sks naruto parent-summary --mission M-... --stdin [--json]', description: 'Run or inspect the Codex official subagent workflow with an Astra standalone parent default and Astra Low mechanical, Astra High implementation, Astra Max judgment, and Astra Medium long-context/tool profiles, max_depth=1, and structured parent-thread completion evidence.' },
   { name: 'reasoning', usage: 'sks reasoning ["prompt"] [--json]', description: 'Show SKS temporary reasoning-effort routing: medium for simple tasks, high for logic, xhigh for research.' },
   { name: 'gx', usage: 'sks gx init|render|validate|drift|snapshot [name]', description: 'Create and verify deterministic SVG/HTML visual context cartridges.' },
   { name: 'profile', usage: 'sks profile show|set <model>', description: 'Inspect or set the current SKS model profile metadata.' },
@@ -1326,8 +1326,8 @@ export function subagentExecutionPolicyText(route: any, prompt: any = '') {
   }
   return [
     'Codex subagent workflow: required for this explicit Naruto or parallel task.',
-    'The parent agent owns decomposition, integration, scoped verification, and the final answer.',
-    'Delegate only genuinely independent slices. Use Luna Max only for tiny short-context mechanical work, Astra High for ordinary implementation, Astra Max for review/debug/planning/architecture/integration/risk judgment, and Astra Medium for long-context or Computer Use, Browser/Chrome, and image-generation execution.',
+    'The parent agent owns decomposition, integration, scoped verification, and the final answer. Preserve its selected settings; every child uses gpt-6-astra with the sealed role effort, regardless of parent model or saved role preferences.',
+    'Delegate only genuinely independent slices. Use Astra Low only for tiny short-context mechanical work, Astra High for ordinary implementation, Astra Max for review/debug/planning/architecture/integration/risk judgment, and Astra Medium for long-context or Computer Use, Browser/Chrome, and image-generation execution.',
     'Parallel writes require disjoint paths; serialize overlapping paths, prohibit nested delegation, avoid duplicate work, wait for all requested agent threads, and close completed threads after collecting results.',
     'Completion evidence comes from official SubagentStart/SubagentStop events plus the parent integration summary, not process counts or PID evidence.'
   ].join(' ');

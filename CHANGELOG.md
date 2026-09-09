@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [10.1.4] - 2026-09-08
+
+### Changed
+
+- Enforce GPT-6 Astra for every managed child agent. Use low effort for tiny
+  mechanical work, medium for reads, exploration, and tool operation, high for
+  implementation, and max for judgment. Preserve the active parent's selected
+  model, reasoning effort, and service tier.
+
 
 ## [10.1.3] - 2026-09-07
 

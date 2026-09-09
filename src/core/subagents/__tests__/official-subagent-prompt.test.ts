@@ -31,7 +31,7 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   })
 
   assert.match(prompt, /gpt-6-astra with max reasoning/)
-  assert.match(prompt, /worker.*gpt-5\.6-luna.*max reasoning.*tiny short-context mechanical/)
+  assert.match(prompt, /worker.*gpt-6-astra.*low reasoning.*tiny short-context mechanical/)
   assert.match(prompt, /gpt-6-astra with high reasoning for ordinary UI, logic, backend, and native implementation/)
   assert.match(prompt, /gpt-6-astra with max reasoning only for focused unresolved, high-risk, final-review, architecture, security/)
   assert.match(prompt, /gpt-6-astra with medium reasoning for long context\/memory, large docs\/repository reads or exploration, large-scale first-draft code processing/)
@@ -51,7 +51,7 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /copy workflow_run_id from subagent-plan\.json into run_id/)
   assert.match(prompt, /\[A\].*`worker`/)
   assert.match(prompt, /\[B\].*`architecture_reviewer`/)
-  assert.match(prompt, /model policy: luna_max_mechanical \(gpt-5\.6-luna\/max\)/)
+  assert.match(prompt, /model policy: luna_max_mechanical \(gpt-6-astra\/low\)/)
   assert.match(prompt, /model policy: sol_max_judgment \(gpt-6-astra\/max\)/)
   assert.match(prompt, /mode: read-only/)
   assert.match(prompt, /metadata mode: on-demand \(2\/25 roles included; full catalog is not injected\)/)
@@ -74,7 +74,7 @@ test('official prompt teaches capacity-derived automatic fan-out and the hard ce
 
   assert.match(prompt, /automatic fan-out is capacity-derived up to 256/)
   assert.match(prompt, /historical 4\/6\/8\/16 task-class values are fallback hints, not clamps/)
-  assert.match(prompt, /in mass fan-out, use worker\/Luna Max for tiny mechanical shards and explorer\/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment/)
+  assert.match(prompt, /in mass fan-out, use worker\/Astra Low for tiny mechanical shards and explorer\/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment/)
   assert.match(prompt, /bounded only by the 256 hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total/)
 })
 
@@ -127,7 +127,7 @@ test('preparation prompt preserves requested count without inventing write slice
   assert.match(prompt, /parent decomposition required before any subagent is spawned/)
 })
 
-test('parent-required prompt preserves third-party active main models for children', () => {
+test('parent-required prompt preserves third-party parent selection and seals Astra children', () => {
   const prompt = buildOfficialSubagentPrompt({
     goal: 'Parent must decompose provider work',
     maxThreads: 4,
@@ -140,12 +140,14 @@ test('parent-required prompt preserves third-party active main models for childr
     }
   })
 
-  assert.match(prompt, /model routing precedence applies to every child, including slices created after parent decomposition/)
-  assert.match(prompt, /for every role without a user override, including slices created after parent decomposition, pass model="moonshotai\/kimi-k3"/)
-  assert.match(prompt, /do not substitute a managed GPT model for the active main model openrouter:moonshotai\/kimi-k3/)
+  assert.match(prompt, /model routing applies to every child, including slices created after parent decomposition/)
+  assert.match(prompt, /parent model policy: keep the current app-selected main model openrouter:moonshotai\/kimi-k3/)
+  assert.match(prompt, /gpt-6-astra only, with the selected role effort/)
+  assert.doesNotMatch(prompt, /pass model="moonshotai\/kimi-k3"|active-main-model-fallback/)
+  assert.match(prompt, /never use a full-history fork for SKS children/)
 })
 
-test('GPT-5.6 Sol active main keeps sealed Luna and Astra child profiles', () => {
+test('non-Astra active main keeps sealed Astra child profiles', () => {
   const prompt = buildOfficialSubagentPrompt({
     goal: 'Search the repository and apply a tiny rename',
     maxThreads: 4,
@@ -176,11 +178,24 @@ test('GPT-5.6 Sol active main keeps sealed Luna and Astra child profiles', () =>
     ]
   })
 
-  assert.match(prompt, /children must keep sealed Luna Max\/Astra Medium\/Astra High\/Astra Max role profiles/)
-  assert.match(prompt, /never replace a sealed role profile with the parent profile/)
+  assert.match(prompt, /use sealed Astra Low\/Astra Medium\/Astra High\/Astra Max role profiles/)
+  assert.match(prompt, /parent selection and saved non-Astra preferences never override the child model/)
   assert.match(prompt, /pass model="gpt-6-astra" and reasoning_effort="medium" from the sealed role policy/)
-  assert.match(prompt, /pass model="gpt-5\.6-luna" and reasoning_effort="max" from the sealed role policy/)
+  assert.match(prompt, /pass model="gpt-6-astra" and reasoning_effort="low" from the sealed role policy/)
   assert.doesNotMatch(prompt, /pass the exact active main model="gpt-5\.6-sol"/)
+})
+
+test('saved child preferences cannot override the sealed model or role effort', () => {
+  const prompt = buildOfficialSubagentPrompt({
+    goal: 'Apply the exact rename',
+    maxThreads: 1,
+    slices: [{ id: 'rename', title: 'Tiny rename', description: 'Exact one-line rename', kind: 'worker', agent: 'worker', paths: ['src/a.ts'] }],
+    roleModelPreferences: {
+      worker: { provider: 'openrouter', model: 'moonshotai/kimi-k3', reasoning_effort: 'max', updated_at: '2026-09-08T00:00:00.000Z' }
+    }
+  })
+  assert.match(prompt, /pass model="gpt-6-astra" and reasoning_effort="low" from the sealed role policy/)
+  assert.doesNotMatch(prompt, /moonshotai|user-scoped-owner-only|Role model preference metadata/)
 })
 
 test('official prompt carries deterministic host capability workflows', () => {
@@ -407,4 +422,15 @@ test('slice validator rejects duplicate work, overlapping writes, and unassigned
   assert.ok(result.blockers.some((blocker) => blocker.startsWith('duplicate_slice_fingerprint:')))
   assert.ok(result.blockers.some((blocker) => blocker.startsWith('overlapping_write_scope:')))
   assert.ok(result.blockers.includes('unassigned_parallel_write_scope:D'))
+})
+
+
+test('Astra effort preferences match the plan without changing the child model', () => {
+  const prompt = buildOfficialSubagentPrompt({
+    goal: 'Implement UI', maxThreads: 1,
+    slices: [{ id: 'ui', title: 'UI', description: 'Implement UI', kind: 'worker', agent: 'ui_implementer', paths: ['src/ui.ts'] }],
+    roleModelPreferences: { ui_implementer: { provider: 'openai', model: 'gpt-6-astra', reasoning_effort: 'max', updated_at: '2026-09-08T00:00:00.000Z' } }
+  })
+  assert.match(prompt, /pass model="gpt-6-astra" and reasoning_effort="max"/)
+  assert.match(prompt, /explicit Astra effort preferences override role defaults, including later slices: {"ui_implementer":"max"}/)
 })

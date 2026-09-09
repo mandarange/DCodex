@@ -1,12 +1,7 @@
 import {
-  DEFAULT_SUBAGENT_EFFORT,
   ASTRA_SUBAGENT_MODEL,
-  LUNA_SUBAGENT_MODEL,
-  LUNA_SUBAGENT_EFFORT,
-  SOL_MAX_SUBAGENT_EFFORT,
-  TERRA_SUBAGENT_EFFORT,
-  NARUTO_PARENT_MODEL,
   decideSubagentModel,
+  subagentModelProfile,
   type SubagentModelPolicyId
 } from '../subagents/model-policy.js';
 
@@ -38,7 +33,7 @@ const CATEGORY_POLICY: Record<TaskCategory, Omit<ModelChoice, 'model'>> = {
   strategy: { reasoning: 'max', serviceTier: 'fast' }
 };
 
-export const NARUTO_MODELS = [LUNA_SUBAGENT_MODEL, ASTRA_SUBAGENT_MODEL] as const;
+export const NARUTO_MODELS = [ASTRA_SUBAGENT_MODEL] as const;
 // Keep the exported type and helper names compatible with existing callers.
 export type NarutoGpt56Model = typeof NARUTO_MODELS[number];
 
@@ -48,6 +43,7 @@ export async function routeModel(category: TaskCategory, opts: {
   lbHealth?: LbHealth | null;
   model?: string | null;
   narutoOnly?: boolean;
+  reasoningEffort?: ModelReasoning | null;
   taskText?: string;
   riskText?: string;
   availableModels?: string[] | null;
@@ -59,6 +55,7 @@ export async function routeModel(category: TaskCategory, opts: {
       ...(opts.taskText !== undefined ? { taskText: opts.taskText } : {}),
       ...(opts.riskText !== undefined ? { riskText: opts.riskText } : {}),
       ...(opts.model !== undefined ? { explicitModel: opts.model } : {}),
+      ...(opts.reasoningEffort !== undefined ? { reasoningEffort: opts.reasoningEffort } : {}),
       ...(opts.availableModels !== undefined ? { availableModels: opts.availableModels } : {}),
       ...(opts.availableModelEfforts !== undefined ? { availableModelEfforts: opts.availableModelEfforts } : {}),
       degradedModels: opts.lbHealth?.degraded_models || []
@@ -75,6 +72,7 @@ export function routeNarutoGpt56Model(input: {
   taskText?: string;
   riskText?: string;
   explicitModel?: string | null;
+  reasoningEffort?: ModelReasoning | null;
   availableModels?: string[] | null;
   availableModelEfforts?: Record<string, string[]> | null;
   degradedModels?: string[];
@@ -102,9 +100,9 @@ export function routeNarutoGpt56Model(input: {
   const degraded = new Set((input.degradedModels || []).map((model) => String(model).toLowerCase()));
   const usable = available.filter((model) => !degraded.has(model));
   const availableEfforts = effortsForModel(input.availableModelEfforts, preferred);
-  const intendedReasoning: ModelReasoning = explicit
+  const intendedReasoning: ModelReasoning = input.reasoningEffort || (explicit
     ? reasoningForExplicitModel(explicit, automatic.policy)
-    : automatic.modelReasoningEffort;
+    : automatic.modelReasoningEffort);
   const model = !invalidExplicit && usable.includes(preferred) && (availableEfforts == null || availableEfforts.includes(intendedReasoning)) ? preferred : '';
   return { model, reasoning: intendedReasoning, serviceTier: 'fast' };
 }
@@ -118,15 +116,9 @@ export function normalizeNarutoGpt56Model(value: unknown): NarutoGpt56Model | nu
   return (NARUTO_MODELS as readonly string[]).includes(model) ? model as NarutoGpt56Model : null;
 }
 
-/**
- * Child Naruto threads keep sealed Luna Max/Astra High/Max/Medium role profiles
- * when the Codex App main model is Astra or a legacy managed GPT-5.6 model. Only
- * third-party/session models inherit onto children for provider continuity.
- */
-export function childInheritsActiveMainModel(value: unknown): boolean {
-  const model = String(value || '').trim().toLowerCase();
-  return Boolean(model) && model !== NARUTO_PARENT_MODEL && !isNarutoGpt56Model(model)
-    && model !== 'gpt-5.6-sol' && model !== 'gpt-5.6-terra';
+/** Compatibility helper: child models are always Astra, independent of the parent. */
+export function childInheritsActiveMainModel(_value: unknown): boolean {
+  return false;
 }
 
 export function categoryForWorkerRole(role: string, taskText = ''): TaskCategory {
@@ -157,8 +149,6 @@ function effortsForModel(catalog: Record<string, string[]> | null | undefined, m
   return (match?.[1] || []).map((effort) => String(effort).toLowerCase());
 }
 
-function reasoningForExplicitModel(model: NarutoGpt56Model, policy: SubagentModelPolicyId): ModelReasoning {
-  if (model === LUNA_SUBAGENT_MODEL) return LUNA_SUBAGENT_EFFORT;
-  if (policy === 'terra_max_context_tools') return TERRA_SUBAGENT_EFFORT;
-  return policy === 'sol_max_judgment' ? SOL_MAX_SUBAGENT_EFFORT : DEFAULT_SUBAGENT_EFFORT;
+function reasoningForExplicitModel(_model: NarutoGpt56Model, policy: SubagentModelPolicyId): ModelReasoning {
+  return subagentModelProfile(policy).modelReasoningEffort;
 }

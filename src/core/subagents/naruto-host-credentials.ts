@@ -30,7 +30,7 @@ export type NarutoAuthMode = (typeof NARUTO_AUTH_MODES)[number];
 const IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const RETIRED_DIRECT_MANAGED_PROVIDERS = new Set(['codex-lb', 'openrouter']);
 
-export const NARUTO_EFFORT_TIERS = ['minimal', 'low', 'medium', 'high', 'max'] as const;
+export const NARUTO_EFFORT_TIERS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 
 export type NarutoEffortTier = (typeof NARUTO_EFFORT_TIERS)[number];
 
@@ -155,7 +155,7 @@ export function resolveNarutoCredentialPolicy(input: NarutoCredentialPolicyInput
   const models: Array<{ key: keyof NarutoCredentialPolicy; flag: string; envKey: string; fallback: string; effort: boolean }> = [
     { key: 'parentModel', flag: '--parent-model', envKey: 'SKS_NARUTO_PARENT_MODEL', fallback: input.defaultParentModel, effort: false },
     { key: 'parentEffort', flag: '--parent-effort', envKey: 'SKS_NARUTO_PARENT_EFFORT', fallback: input.defaultParentEffort, effort: true },
-    { key: 'subagentModel', flag: '--subagent-model', envKey: 'SKS_NARUTO_SUBAGENT_MODEL', fallback: input.defaultSubagentModel, effort: false },
+    { key: 'subagentModel', flag: '--subagent-model', envKey: 'SKS_NARUTO_SUBAGENT_MODEL', fallback: ASTRA_SUBAGENT_MODEL, effort: false },
     { key: 'subagentEffort', flag: '--subagent-effort', envKey: 'SKS_NARUTO_SUBAGENT_EFFORT', fallback: input.defaultSubagentEffort, effort: true }
   ];
   const resolvedModels: Record<string, string> = {};
@@ -177,6 +177,10 @@ export function resolveNarutoCredentialPolicy(input: NarutoCredentialPolicyInput
     }
     resolvedModels[entry.key] = raw.value;
     sources[entry.key] = raw.source;
+  }
+  if (resolvedModels.subagentModel !== ASTRA_SUBAGENT_MODEL) {
+    blockers.push('naruto_subagent_model_must_be_astra');
+    resolvedModels.subagentModel = ASTRA_SUBAGENT_MODEL;
   }
   validateGpt56EffortPair('parent', String(resolvedModels.parentModel), String(resolvedModels.parentEffort), blockers);
   validateGpt56EffortPair('subagent', String(resolvedModels.subagentModel), String(resolvedModels.subagentEffort), blockers);
@@ -229,7 +233,7 @@ function validateGpt56EffortPair(
   blockers: string[]
 ): void {
   const allowed = model === ASTRA_SUBAGENT_MODEL
-    ? scope === 'parent' ? ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : ['medium', 'high', 'max']
+    ? ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
     : model === LUNA_SUBAGENT_MODEL || model === 'gpt-5.6-terra'
       ? ['max']
       : model === 'gpt-5.6-sol'

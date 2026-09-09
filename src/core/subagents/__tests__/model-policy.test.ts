@@ -24,8 +24,8 @@ test('official parent and four child profiles expose the sealed model/effort mat
   assert.equal(DEFAULT_SUBAGENT_EFFORT, 'high')
   assert.equal(THINKING_SUBAGENT_MODEL, 'gpt-6-astra')
   assert.equal(SUBAGENT_EFFORT, 'max')
-  assert.equal(LUNA_SUBAGENT_MODEL, 'gpt-5.6-luna')
-  assert.equal(LUNA_SUBAGENT_EFFORT, 'max')
+  assert.equal(LUNA_SUBAGENT_MODEL, 'gpt-6-astra')
+  assert.equal(LUNA_SUBAGENT_EFFORT, 'low')
   assert.equal(TERRA_SUBAGENT_MODEL, 'gpt-6-astra')
   assert.equal(TERRA_SUBAGENT_EFFORT, 'medium')
   assert.equal(SOL_MAX_SUBAGENT_EFFORT, 'max')
@@ -39,8 +39,8 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   }), {
     policy: 'luna_max_mechanical',
     kind: 'worker',
-    model: 'gpt-5.6-luna',
-    modelReasoningEffort: 'max',
+    model: 'gpt-6-astra',
+    modelReasoningEffort: 'low',
     reason: 'luna_max_mechanical'
   })
 
@@ -87,11 +87,11 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'luna_max_mechanical', description)
-    assert.equal(decision.model, 'gpt-5.6-luna', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
   }
 })
 
-test('mass/broad search and exploration route to Astra Medium while tiny typing shards stay on Luna', () => {
+test('mass/broad search and exploration route to Astra Medium while tiny typing shards stay on Astra Low', () => {
   for (const description of [
     'Mass search across the whole repository for every call site',
     'Bulk scan of many files to build an export inventory',
@@ -110,7 +110,7 @@ test('mass/broad search and exploration route to Astra Medium while tiny typing 
     assert.equal(decision.modelReasoningEffort, 'medium', description)
   }
 
-  // Tiny typing-level shards stay on Luna even when the surrounding sentence
+  // Tiny typing-level shards stay on Astra Low even when the surrounding sentence
   // mentions a large fan-out; the shard itself is the classification unit.
   for (const description of [
     'Shard 9 of 16 in the mass fan-out: simple search for the symbol name and type the replacement',
@@ -123,8 +123,8 @@ test('mass/broad search and exploration route to Astra Medium while tiny typing 
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'luna_max_mechanical', description)
-    assert.equal(decision.model, 'gpt-5.6-luna', description)
-    assert.equal(decision.modelReasoningEffort, 'max', description)
+    assert.equal(decision.model, 'gpt-6-astra', description)
+    assert.equal(decision.modelReasoningEffort, 'low', description)
   }
 })
 
@@ -152,7 +152,7 @@ test('mass-lane keywords never pull judgment or clear implementation off the Ast
   }
 })
 
-test('judgment wins mixed or ambiguous work and Luna is excluded from long context', () => {
+test('judgment wins mixed or ambiguous work and Low is excluded from long context', () => {
   for (const description of [
     'Security review using browser evidence',
     'Debug a failure across a long-context log',
@@ -276,7 +276,7 @@ test('official effort policy applies the sealed four-profile routing matrix', ()
     prompt: 'review the browser evidence for security risk'
   })
 
-  assert.deepEqual([mechanical.model, mechanical.model_reasoning_effort], ['gpt-5.6-luna', 'max'])
+  assert.deepEqual([mechanical.model, mechanical.model_reasoning_effort], ['gpt-6-astra', 'low'])
   assert.deepEqual([implementation.model, implementation.model_reasoning_effort], ['gpt-6-astra', 'high'])
   assert.deepEqual([context.model, context.model_reasoning_effort], ['gpt-6-astra', 'medium'])
   assert.deepEqual([review.model, review.model_reasoning_effort], ['gpt-6-astra', 'max'])
@@ -284,14 +284,13 @@ test('official effort policy applies the sealed four-profile routing matrix', ()
 
 test('Naruto automatic routing uses the exact selected profile and fails closed', () => {
   const catalog = {
-    availableModels: ['gpt-5.6-luna', 'gpt-6-astra'],
+    availableModels: ['gpt-6-astra'],
     availableModelEfforts: {
-      'gpt-5.6-luna': ['max'],
-      'gpt-6-astra': ['medium', 'high', 'max']
+      'gpt-6-astra': ['low', 'medium', 'high', 'max']
     }
   }
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'exact one-line single-file rename' }), {
-    model: 'gpt-5.6-luna', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'low', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser logic' }), {
     model: 'gpt-6-astra', reasoning: 'high', serviceTier: 'fast'
@@ -309,14 +308,16 @@ test('Naruto automatic routing uses the exact selected profile and fails closed'
   }).model, '')
 })
 
-test('explicit Astra selects medium, high, or max from the task profile', () => {
+test('explicit Astra selects low, medium, high, or max from the task profile', () => {
   const catalog = {
-    availableModels: ['gpt-5.6-luna', 'gpt-6-astra'],
+    availableModels: ['gpt-6-astra'],
     availableModelEfforts: {
-      'gpt-5.6-luna': ['max'],
-      'gpt-6-astra': ['medium', 'high', 'max']
+      'gpt-6-astra': ['low', 'medium', 'high', 'max']
     }
   }
+  assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'exact one-line rename', explicitModel: 'gpt-6-astra' }), {
+    model: 'gpt-6-astra', reasoning: 'low', serviceTier: 'fast'
+  })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'browser QA', explicitModel: 'gpt-6-astra' }), {
     model: 'gpt-6-astra', reasoning: 'medium', serviceTier: 'fast'
   })
@@ -334,10 +335,10 @@ test('generic routing preserves an arbitrary explicit non-Naruto model', async (
 })
 
 
-test('Astra parent preserves child role routing and third-party provider continuity', () => {
+test('parent model selections never override child Astra routing', () => {
   assert.equal(childInheritsActiveMainModel('gpt-6-astra'), false)
   assert.equal(childInheritsActiveMainModel('gpt-5.6-sol'), false)
   assert.equal(childInheritsActiveMainModel('gpt-5.6-terra'), false)
   assert.equal(childInheritsActiveMainModel('gpt-5.6-luna'), false)
-  assert.equal(childInheritsActiveMainModel('anthropic/claude-sonnet-4.5'), true)
+  assert.equal(childInheritsActiveMainModel('anthropic/claude-sonnet-4.5'), false)
 })

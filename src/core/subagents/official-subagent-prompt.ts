@@ -1,4 +1,4 @@
-import { NARUTO_PARENT_MODEL, NARUTO_PARENT_EFFORT } from './model-policy.js'
+import { ASTRA_SUBAGENT_MODEL, NARUTO_PARENT_MODEL, NARUTO_PARENT_EFFORT } from './model-policy.js'
 import { HARD_NARUTO_MAX_THREADS, type SubagentCapacityController } from './thread-budget.js'
 import type { BoundedTriwikiAttention } from './triwiki-attention.js'
 import { coreEngineeringDirectiveReferenceText } from '../lean-engineering-policy.js'
@@ -11,7 +11,6 @@ import {
   selectOfficialSubagentRole
 } from './agent-catalog.js'
 import type { RoleModelPreference } from './role-model-preferences.js'
-import { childInheritsActiveMainModel } from '../provider/model-router.js'
 
 export interface ActiveMainModelRouting {
   provider: string
@@ -89,8 +88,12 @@ export function buildOfficialSubagentPrompt(input: {
     ...(input.recommendedAgents || [])
   ])
   const activeMainModel = normalizedActiveMainModel(input.activeMainModel)
-  const inheritActiveMainOntoChildren = childInheritsActiveMainModel(activeMainModel?.model)
-  const spawnModelRouting = renderSpawnModelRouting(activeMainModel)
+  const effortPreferences = Object.fromEntries(Object.entries(input.roleModelPreferences || {})
+    .filter(([name, row]) => row.model === ASTRA_SUBAGENT_MODEL
+      && ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(row.reasoning_effort)
+      && officialSubagentOnDemandRoleCatalog([name]).some((role) => role.name === name))
+    .map(([name, row]) => [name, row.reasoning_effort]))
+  const spawnModelRouting = renderSpawnModelRouting()
   const parentOutputMode = input.parentOutputMode === 'app_naruto_stdin'
     ? 'app_naruto_stdin'
     : 'raw_json'
@@ -98,21 +101,15 @@ export function buildOfficialSubagentPrompt(input: {
     const mode = slice.readOnly ? 'read-only' : 'use the parent permission mode'
     const paths = (slice.paths || []).map((entry) => String(entry).trim()).filter(Boolean)
     const role = officialSubagentOnDemandRoleCatalog([agentName])[0]
-    const preference = input.roleModelPreferences?.[agentName]
-    const sealedReasoning = role?.model_reasoning_effort || 'medium'
-    const sealedModel = role?.model || null
-    const spawnContract = preference
-      ? `pass the exact catalog slug model=${JSON.stringify(preference.model)} and reasoning_effort=${JSON.stringify(preference.reasoning_effort)} when spawning this role; logical provider=${JSON.stringify(preference.provider)} is encoded by the active router/catalog and is not a spawn_agent argument`
-      : inheritActiveMainOntoChildren && activeMainModel
-        ? `pass the exact active main model=${JSON.stringify(activeMainModel.model)} and reasoning_effort=${JSON.stringify(sealedReasoning)} when spawning this role; the current app session already owns provider=${JSON.stringify(activeMainModel.provider)}`
-        : sealedModel
-          ? `pass model=${JSON.stringify(sealedModel)} and reasoning_effort=${JSON.stringify(sealedReasoning)} from the sealed role policy; do not replace Luna Max/Astra Medium/Astra High/Astra Max with the parent active main model`
-          : 'omit model/reasoning overrides and preserve the installed custom-agent default'
+    const sealedReasoning = effortPreferences[agentName] || role?.model_reasoning_effort || 'medium'
+    const spawnContract = role
+      ? `pass model=${JSON.stringify(role.model)} and reasoning_effort=${JSON.stringify(sealedReasoning)} from the sealed role policy`
+      : 'stop before spawning: resolve an installed sealed Astra role and its effort first'
 
     return [
       `${index + 1}. [${slice.id}] use custom agent \`${agentName}\``,
       `   ${slice.title}: ${slice.description}`,
-      `   model policy: ${role ? `${role.model_policy} (${role.model}/${role.model_reasoning_effort})` : 'resolve from installed custom agent'}`,
+      `   model policy: ${role ? `${role.model_policy} (${role.model}/${sealedReasoning})` : 'resolve from installed custom agent'}`,
       `   spawn contract: ${spawnContract}`,
       `   mode: ${mode}; paths: ${paths.join(', ') || 'assigned by parent'}`
     ].join('\n')
@@ -144,17 +141,18 @@ Subagent rules:
 - use only Codex official subagent threads; do not launch shell workers, a custom scheduler, a worker pool, or model fanout
 - select the narrowest matching project custom agent by its description; the custom agent name is the spawn type
 - custom \`agent_type\` selection and spawn-time \`model\`/\`reasoning_effort\` overrides must use \`fork_turns="none"\` or a positive bounded turn count, with the complete bounded slice contract in \`message\`; context contract: pass fork_turns="none" for listed slices
-- \`spawn_agent\` has no provider argument; cross-provider preferences use exact model slugs from the active backend/catalog
+- \`spawn_agent\` has no provider argument; every child uses the exact model slug gpt-6-astra
 - never combine \`fork_turns="all"\` or the omitted/default full-history mode with \`agent_type\`, \`model\`, or \`reasoning_effort\`; Codex rejects that start before SubagentStart
-- full history is valid only when all three overrides are omitted
+- never use a full-history fork for SKS children
 ${spawnModelRouting}
-- use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
+${Object.keys(effortPreferences).length ? `- explicit Astra effort preferences override role defaults, including later slices: ${JSON.stringify(effortPreferences)}` : ''}
+- use \`worker\` with gpt-6-astra and low reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
 - use gpt-6-astra with high reasoning for ordinary UI, logic, backend, and native implementation
 - use gpt-6-astra with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
 - use gpt-6-astra with medium reasoning for long context/memory, large docs/repository reads or exploration, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image generation
-- explicit task class and phase win over incidental keywords: Astra Medium gathers/explores/searches broadly, Luna handles tiny mechanical edits, Astra High implements, and Astra Max performs the focused judgment pass
-- in mass fan-out, use worker/Luna Max for tiny mechanical shards and explorer/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment
-- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; preserve each sealed role model and effort instead of applying the parent profile to every child
+- explicit task class and phase win over incidental keywords: Astra Medium gathers/explores/searches broadly, Astra Low handles tiny mechanical edits, Astra High implements, and Astra Max performs the focused judgment pass
+- in mass fan-out, use worker/Astra Low for tiny mechanical shards and explorer/Astra Medium for broad exploration; use Astra High for implementation and Astra Max for judgment
+- never assign Astra Low to long-context, broad exploration, review, debugging, planning, or tool-heavy work; preserve each sealed role model and effort instead of applying the parent profile to every child
 
 Plan and capacity:
 - automatic fan-out is capacity-derived up to ${MAX_AUTOMATIC_SUBAGENT_COUNT}: after decomposition, use every safe useful child slot supported by the ready DAG, disjoint ownership, verifier/tool capacity, and actual host limits; the historical 4/6/8/16 task-class values are fallback hints, not clamps
@@ -190,9 +188,6 @@ ${renderSliceSafety(sliceSafety, parentDecompositionRequired)}
 
 Central TriWiki context:
 ${triwiki}
-
-Role model preference metadata:
-${renderRoleModelPreferenceMetadata(input.roleModelPreferences, activeMainModel)}
 
 Project custom agent catalog:
 ${catalog}
@@ -259,60 +254,17 @@ function renderAppNarutoParentOutput(missionId: unknown, workflowRunId: unknown)
 `
 }
 
-function renderRoleModelPreferenceMetadata(
-  preferences: Readonly<Record<string, RoleModelPreference>> | undefined,
-  activeMainModel: ActiveMainModelRouting | null
-): string {
-  const rows = Object.entries(preferences || {}).map(([role, preference]) => ({
-    role,
-    provider: preference.provider,
-    model: preference.model,
-    reasoning_effort: preference.reasoning_effort,
-    source: 'user-scoped-owner-only'
-  }))
-  if (activeMainModel && childInheritsActiveMainModel(activeMainModel.model)) {
-    rows.push({
-      role: '*',
-      provider: activeMainModel.provider,
-      model: activeMainModel.model,
-      reasoning_effort: 'role-managed',
-      source: 'active-main-model-fallback'
-    })
-  }
-  return rows.length ? JSON.stringify(rows) : '[]'
-}
-
 function normalizedActiveMainModel(value: ActiveMainModelRouting | null | undefined): ActiveMainModelRouting | null {
   const provider = String(value?.provider || '').trim()
   const model = String(value?.model || '').trim()
   return provider && model ? { provider, model } : null
 }
 
-function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null): string {
-  const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
-  const precedence = inheritActiveMain
-    ? '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
-    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Astra Medium / Astra High / Astra Max) -> installed custom-agent default'
-  const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
-  if (!activeMainModel) {
-    return [
-      roleOverride,
-      '- otherwise pass the selected role\'s sealed model/effort'
-    ].join('\n')
-  }
-  if (!inheritActiveMain) {
-    return [
-      precedence,
-      roleOverride,
-      `- parent keeps the app-selected main model ${activeMainModel.provider}:${activeMainModel.model}, but children must keep sealed Luna Max/Astra Medium/Astra High/Astra Max role profiles`,
-      '- for every role without a user override, including slices created after parent decomposition, pass that role\'s sealed model and reasoning_effort; never replace a sealed role profile with the parent profile'
-    ].join('\n')
-  }
+function renderSpawnModelRouting(): string {
   return [
-    precedence,
-    roleOverride,
-    `- for every role without a user override, including slices created after parent decomposition, pass model=${JSON.stringify(activeMainModel.model)} and the selected custom role's installed reasoning effort; provider=${JSON.stringify(activeMainModel.provider)} remains owned by the current app session`,
-    `- do not substitute a managed GPT model for the active main model ${activeMainModel.provider}:${activeMainModel.model}`
+    '- model routing applies to every child, including slices created after parent decomposition: gpt-6-astra only, with the selected role effort',
+    '- use sealed Astra Low/Astra Medium/Astra High/Astra Max role profiles; parent selection and saved non-Astra preferences never override the child model; explicit Astra effort preferences may override role defaults',
+    '- preserve the user-selected parent model, reasoning effort, and service tier'
   ].join('\n')
 }
 

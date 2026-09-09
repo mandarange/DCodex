@@ -16,7 +16,7 @@
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-Current package: **SKS 10.1.3**. Install the latest stable release from npm.
+Current package: **SKS 10.1.4**. Install the latest stable release from npm.
 
 [Quick start](#install-in-one-command) · [Commands](#everyday-commands) · [SKS Center](#sks-center-macos) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 
@@ -133,12 +133,13 @@ configuration, transport checks, and recovery commands.
 
 ## Naruto workflow
 
-SKS uses official Codex subagents. The parent owns decomposition, integration,
+SKS enforces GPT-6 Astra for every managed child and varies effort by task.
+The parent owns decomposition, integration,
 and final verification; children receive bounded tasks and do not spawn children.
 
 | Work | Managed model | Effort |
 | --- | --- | --- |
-| Tiny mechanical tasks | GPT-5.6 Luna | max |
+| Tiny mechanical tasks | GPT-6 Astra | low |
 | Exploration, large-context reads, and direct tool operation | GPT-6 Astra | medium |
 | Implementation | GPT-6 Astra | high |
 | Review, debugging, and focused judgment | GPT-6 Astra | max |

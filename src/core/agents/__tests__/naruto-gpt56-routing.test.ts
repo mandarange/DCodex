@@ -6,19 +6,18 @@ import type { CodexTaskInput } from '../../codex-control/codex-control-plane.js'
 import { buildCodexExecutionPolicy, buildCodexSdkConfig } from '../../codex-control/codex-sdk-config-policy.js';
 import { normalizeCodexModelEffortCatalogPayload } from '../../codex-lb/codex-lb-env.js';
 
-const models = ['gpt-5.6-luna', 'gpt-6-astra'];
+const models = ['gpt-6-astra'];
 const modelEfforts = {
-  'gpt-5.6-luna': ['low', 'medium', 'high', 'xhigh', 'max'],
   'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 };
 
-test('Naruto Luna/Astra policy maps all four sealed profiles', () => {
+test('Naruto Astra-only policy maps all four sealed profiles', () => {
   const available = { availableModels: models, availableModelEfforts: modelEfforts };
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'implementation code_modification' }), {
     model: 'gpt-6-astra', reasoning: 'high', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'exact one-line single-file rename' }), {
-    model: 'gpt-5.6-luna', reasoning: 'max', serviceTier: 'fast'
+    model: 'gpt-6-astra', reasoning: 'low', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'implementation', riskText: 'critical security migration' }), {
     model: 'gpt-6-astra', reasoning: 'max', serviceTier: 'fast'
@@ -37,12 +36,12 @@ test('Naruto Luna/Astra policy maps all four sealed profiles', () => {
   });
 });
 
-test('native worker routing propagates simple EN/KO Luna, Astra Medium, High, and Max choices', async () => {
+test('native worker routing propagates simple EN/KO Astra Low, Medium, High, and Max choices', async () => {
   const catalog = { ok: true, models, model_efforts: modelEfforts, blockers: [] };
   const cases = [
-    ['Simple coding change: update one constant', 'gpt-5.6-luna', 'max'],
-    ['간단한 설정 변경으로 플래그만 켜줘', 'gpt-5.6-luna', 'max'],
-    ['간단한 셋업으로 한 줄만 추가해줘', 'gpt-5.6-luna', 'max'],
+    ['Simple coding change: update one constant', 'gpt-6-astra', 'low'],
+    ['간단한 설정 변경으로 플래그만 켜줘', 'gpt-6-astra', 'low'],
+    ['간단한 셋업으로 한 줄만 추가해줘', 'gpt-6-astra', 'low'],
     ['Rapid large-scale first-draft code processing across many files', 'gpt-6-astra', 'medium'],
     ['장기 메모리를 정리하고 통합해줘', 'gpt-6-astra', 'medium'],
     ['Implement the ordinary parser logic', 'gpt-6-astra', 'high'],
@@ -61,10 +60,10 @@ test('native worker routing propagates simple EN/KO Luna, Astra Medium, High, an
   }
 });
 
-test('Naruto Luna/Astra policy fails closed for missing model or unadvertised effort', () => {
+test('Naruto Astra-only policy fails closed for missing model or unadvertised effort', () => {
   assert.equal(routeNarutoGpt56Model({
     taskText: 'exact one-line single-file rename',
-    availableModels: ['gpt-6-astra'],
+    availableModels: ['gpt-5.6-luna'],
     availableModelEfforts: modelEfforts
   }).model, '');
   assert.equal(routeNarutoGpt56Model({
@@ -112,18 +111,20 @@ test('native Naruto worker routing passes the exact selected model and effort in
   }).sandbox, 'workspace-write');
 });
 
-test('internal Naruto worker routing blocks non-family explicit overrides', async () => {
-  const routing = await resolveWorkerModelRouting({
-    agent: { id: 'naruto_1', role: 'implementer', naruto_role: 'implementer' },
-    slice: { id: 'W1', kind: 'implementation', title: 'Implement feature' },
-    intake: { route: '$Naruto' },
-    fastModePolicy: { fast_mode: true, service_tier: 'fast' }
-  }, {
-    lbCatalog: { ok: true, models, model_efforts: modelEfforts, blockers: [] },
-    lbHealth: { ok: true, degraded_models: [] },
-    env: { SKS_WORKER_MODEL: 'gpt-5.4' }
-  });
-  assert.ok(routing.blockers.includes('naruto_worker_model_outside_gpt_5_6_family'));
+test('internal Naruto worker routing blocks non-Astra explicit overrides', async () => {
+  for (const model of ['gpt-5.4', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'z-ai/glm-5.2', 'anthropic/claude-sonnet-4.5']) {
+    const routing = await resolveWorkerModelRouting({
+      agent: { id: 'naruto_1', role: 'implementer', naruto_role: 'implementer' },
+      slice: { id: 'W1', kind: 'implementation', title: 'Implement feature' },
+      intake: { route: '$Naruto' },
+      fastModePolicy: { fast_mode: true, service_tier: 'fast' }
+    }, {
+      lbCatalog: { ok: true, models, model_efforts: modelEfforts, blockers: [] },
+      lbHealth: { ok: true, degraded_models: [] },
+      env: { SKS_WORKER_MODEL: model }
+    });
+    assert.ok(routing.blockers.includes('naruto_worker_model_outside_gpt_5_6_family'), model);
+  }
 });
 
 test('Naruto rejects the process backend and conflicting effort/tier overrides', async () => {

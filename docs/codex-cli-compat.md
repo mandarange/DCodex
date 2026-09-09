@@ -36,7 +36,7 @@ Version detection checks `codex --version`, `codex exec --help`, `codex exec res
 ## Prefer-Latest Policy
 
 - **Preferred channel artifact**: the exact `@openai/codex-sdk` dependency in `package.json` selects the tested graph; the lockfile proves the SDK and CLI resolutions agree.
-- **Capability matrix**: features such as `multi_agent_v2`, `agents.max_concurrent_threads_per_session`, thread-list search, MCP startup/tool timeouts, and GPT-6 Astra and GPT-5.6 Luna routing are probed or wrapped; missing capabilities fail that route with `sks codex update` / Menu Bar **Update Codex CLI Now** guidance.
+- **Capability matrix**: features such as `multi_agent_v2`, `agents.max_concurrent_threads_per_session`, thread-list search, MCP startup/tool timeouts, and GPT-6 Astra child routing are probed or wrapped; missing capabilities fail that route with `sks codex update` / Menu Bar **Update Codex CLI Now** guidance.
 - **Update inducement**: SKS Menu Bar and Control Center surface Codex CLI update status and actions (`sks update status`, `sks codex update`).
 - Historical compatibility matrices and their release gates are not part of the active product or release surface.
 

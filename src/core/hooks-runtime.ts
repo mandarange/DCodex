@@ -48,6 +48,7 @@ import {
 import { classifyTaskProfile } from './runtime/task-profile.js';
 import { resolveSubagentThreadBudget } from './subagents/thread-budget.js';
 import { readOfficialSubagentConfig } from './subagents/official-subagent-config.js';
+import { subagentSpawnPolicyBlockReason } from './hooks-runtime/subagent-spawn-policy.js';
 import { withFileLock } from './locks/file-lock.js';
 import {
   ensureConfinedDirectory,
@@ -262,7 +263,7 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
     : '';
   const resourceGuard = skillGuardBinding ? [
     `SKS Naruto policy: max_threads frame budget is ${budget.maxThreads} (cap, not a spawn target).`,
-    'GPT-5.6 four profiles are routing lanes, not an agent-count cap.',
+    'All children use gpt-6-astra; low/medium/high/max are effort lanes, not an agent-count cap.',
     'Use max_depth=1. Naruto children must not spawn children.',
     'Do not duplicate an already assigned slice.',
     'Parallel writes require disjoint paths; serialize overlapping paths.',
@@ -680,6 +681,8 @@ async function consumeActiveOfficialWorkflowQueue(
   }
 }
 async function hookPreTool(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {
+  const spawnPolicyBlock = subagentSpawnPolicyBlockReason(payload);
+  if (spawnPolicyBlock) return { decision: 'block', permissionDecision: 'deny', reason: spawnPolicyBlock };
   const artifactDir = officialSubagentArtifactDir(root, state, sessionKey);
   const activeBinding = officialSubagentSkillGuardBinding(state, { allowClosedOfficialChild: true });
   let skillAvailabilityBlock: string | null = null;

@@ -10,7 +10,7 @@ import { leanEngineeringCompactText, leanPolicyReference } from '../lean-enginee
 import { readCodexLbModelCatalog, readLbHealth } from '../codex-lb/codex-lb-env.js'
 import { categoryForWorkerRole, isNarutoGpt56Model, modelRouteReason, routeModel, type ModelChoice, type TaskCategory } from '../provider/model-router.js'
 import { codexTimeoutClassForRoute } from '../codex-control/codex-reliability-shield.js'
-import { readConfiguredCodexModelRoutingContext } from '../codex-app/codex-model-catalog.js'
+import { ASTRA_SUBAGENT_MODEL, decideSubagentModel } from '../subagents/model-policy.js'
 
 export const NATIVE_WORKER_BACKEND_ROUTER_SCHEMA = 'sks.native-worker-backend-router.v1'
 
@@ -244,26 +244,8 @@ export async function resolveWorkerModelRouting(input: {
   const riskText = [taskKindText, input.slice?.risk, input.slice?.risk_focus, input.slice?.acceptance, input.slice?.parent_prompt, input.slice?.description, input.intake?.prompt].map((value) => String(value || '')).join(' ')
   const category = categoryForWorkerRole(String(input.agent?.role || 'executor'), taskKindText)
   const env = deps.env || process.env
-  const configuredRouting = !Object.prototype.hasOwnProperty.call(deps, 'env') || env.CODEX_HOME || env.HOME
-    ? await readConfiguredCodexModelRoutingContext({ env }).catch(() => null)
-    : null
-  const sealedPlanModel = ['user_role_model_preference', 'active_main_model'].includes(
-    String(input.agent?.routed_model_policy || '')
-  )
-    ? String(input.agent?.routed_model || '').trim()
-    : ''
-  const configuredMainModel = String(
-    input.intake?.main_model
-    || input.intake?.selected_model
-    || input.intake?.provider_model
-    || configuredRouting?.selected_model
-    || ''
-  ).trim()
-  const managedAgentModel = String(input.agent?.model || '').trim()
-  const inheritedModel = sealedPlanModel || configuredMainModel || managedAgentModel
-  const providerModelSelected = Boolean(sealedPlanModel || configuredMainModel)
   const lbHealth = Object.prototype.hasOwnProperty.call(deps, 'lbHealth') ? deps.lbHealth : await readLbHealth().catch(() => null)
-  const lbCatalog = narutoOnly && !providerModelSelected
+  const lbCatalog = narutoOnly
     ? Object.prototype.hasOwnProperty.call(deps, 'lbCatalog')
       ? deps.lbCatalog
       : input.intake?.naruto_model_catalog || await readCodexLbModelCatalog().catch(() => null)
@@ -276,37 +258,31 @@ export async function resolveWorkerModelRouting(input: {
   const explicitNarutoModelInvalid = narutoOnly && Boolean(explicitModel) && !isNarutoGpt56Model(explicitModel)
   const explicitNarutoReasoningInvalid = narutoOnly && Boolean(explicitReasoningRaw) && !explicitReasoning
   const explicitNarutoTierInvalid = narutoOnly && Boolean(explicitTierRaw) && !explicitTier
-  const inheritedReasoning = normalizeModelReasoning(
-    sealedPlanModel
-      ? input.agent?.routed_model_reasoning_effort
-      : input.agent?.model_reasoning_effort
-  )
-  const routed = providerModelSelected
-    ? {
-        model: inheritedModel,
-        reasoning: explicitReasoning || inheritedReasoning || 'medium',
-        serviceTier: explicitTier || input.fastModePolicy.service_tier || 'fast'
-      } satisfies ModelChoice
-    : explicitModel && !narutoOnly
-    ? {
-        model: explicitModel,
-        reasoning: explicitReasoning || inheritedReasoning || 'medium',
-        serviceTier: explicitTier || input.fastModePolicy.service_tier || 'fast'
-      } satisfies ModelChoice
-    : await routeModel(category, {
+  const savedAstraEffort = input.agent?.routed_model_policy === 'user_role_model_preference'
+    && input.agent?.routed_model === ASTRA_SUBAGENT_MODEL
+    ? normalizeModelReasoning(input.agent?.routed_model_reasoning_effort)
+    : null
+  const taskPolicy = decideSubagentModel({ title: taskKindText, description: riskText, role: input.agent?.role })
+  const routed = narutoOnly
+    ? await routeModel(category, {
         lbHealth,
-        ...(narutoOnly ? {
-          narutoOnly: true,
-          taskText: taskKindText,
-          riskText,
-          availableModels: lbCatalog?.models || [],
-          availableModelEfforts: lbCatalog?.model_efforts || {},
-          ...(explicitModel ? { model: explicitModel } : {})
-        } : { model: inheritedModel || null })
+        narutoOnly: true,
+        taskText: taskKindText,
+        riskText,
+        reasoningEffort: savedAstraEffort,
+        availableModels: lbCatalog?.models || [],
+        availableModelEfforts: lbCatalog?.model_efforts || {},
+        ...(explicitModel ? { model: explicitModel } : {})
       })
+    : {
+        model: ASTRA_SUBAGENT_MODEL,
+        reasoning: explicitReasoning || savedAstraEffort || taskPolicy.modelReasoningEffort,
+        serviceTier: explicitTier || input.fastModePolicy.service_tier || 'fast'
+      } satisfies ModelChoice
   const blockers = [
-    ...(narutoOnly && !providerModelSelected && !lbCatalog?.ok ? (lbCatalog?.blockers || ['codex_lb_model_catalog_unavailable']) : []),
+    ...(narutoOnly && !lbCatalog?.ok ? (lbCatalog?.blockers || ['codex_lb_model_catalog_unavailable']) : []),
     ...(explicitNarutoModelInvalid ? ['naruto_worker_model_outside_gpt_5_6_family'] : []),
+    ...(!narutoOnly && explicitModel && explicitModel !== ASTRA_SUBAGENT_MODEL ? ['subagent_model_must_be_astra'] : []),
     ...(explicitNarutoReasoningInvalid ? ['naruto_reasoning_override_invalid'] : []),
     ...(explicitNarutoTierInvalid ? ['naruto_service_tier_override_invalid'] : []),
     ...(narutoOnly && explicitReasoning && explicitReasoning !== routed.reasoning ? ['naruto_reasoning_override_conflicts_with_policy'] : []),
@@ -316,12 +292,12 @@ export async function resolveWorkerModelRouting(input: {
   return {
     category,
     choice: routed,
-    explicit: Boolean(explicitModel || providerModelSelected),
+    explicit: Boolean(explicitModel),
     lb_health: lbHealth,
     lb_catalog: lbCatalog,
     blockers: [...new Set(blockers)],
     reason: modelRouteReason(category, routed, {
-      explicit: Boolean(explicitModel || providerModelSelected),
+      explicit: Boolean(explicitModel),
       quotaLow: lbHealth?.quota_low === true,
       degraded: lbHealth?.degraded_models || []
     })

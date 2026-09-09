@@ -1,13 +1,14 @@
 export const NARUTO_PARENT_MODEL = 'gpt-6-astra'
 export const NARUTO_PARENT_EFFORT = 'max'
 
-export const LUNA_SUBAGENT_MODEL = 'gpt-5.6-luna'
 export const ASTRA_SUBAGENT_MODEL = 'gpt-6-astra'
-// Legacy model names remain aliases for callers using the stable policy IDs.
+// Legacy names and serialized policy IDs remain compatibility aliases.
+// All child profiles use Astra; only their reasoning effort differs.
+export const LUNA_SUBAGENT_MODEL = ASTRA_SUBAGENT_MODEL
 export const TERRA_SUBAGENT_MODEL = ASTRA_SUBAGENT_MODEL
 export const SOL_SUBAGENT_MODEL = ASTRA_SUBAGENT_MODEL
 
-export const LUNA_SUBAGENT_EFFORT = 'max'
+export const LUNA_SUBAGENT_EFFORT = 'low'
 export const TERRA_SUBAGENT_EFFORT = 'medium'
 export const DEFAULT_SUBAGENT_EFFORT = 'high'
 export const SOL_MAX_SUBAGENT_EFFORT = 'max'
@@ -29,8 +30,8 @@ export type SubagentContextMode = 'short' | 'long'
 export type SubagentToolSurface = 'none' | 'computer_use' | 'browser' | 'image_generation'
 export type SubagentScopeSize = 'tiny' | 'bounded' | 'large'
 export type SubagentKind = 'worker' | 'expert'
-export type SubagentModel = typeof LUNA_SUBAGENT_MODEL | typeof ASTRA_SUBAGENT_MODEL
-export type SubagentModelReasoningEffort = 'medium' | 'high' | 'max'
+export type SubagentModel = typeof ASTRA_SUBAGENT_MODEL
+export type SubagentModelReasoningEffort = 'low' | 'medium' | 'high' | 'max'
 
 export interface SubagentModelProfile {
   policy: SubagentModelPolicyId
@@ -344,7 +345,7 @@ export function decideSubagentModel(input: {
   // Explicit phase/task classification is authoritative unless it conflicts
   // with an even stronger explicit requirement or a clear complexity guard.
   // A caller cannot force multi-file, feature, logic, long-context, or
-  // judgment work into Luna merely by labeling it mechanical.
+  // judgment work into Astra Low merely by labeling it mechanical.
   if (input.taskClass === 'judgment' || input.requiresJudgment === true) return decision('sol_max_judgment')
   if (input.taskClass === 'context_tools' || explicitContextOrTools) return decision('terra_max_context_tools')
   if (input.taskClass === 'implementation') return decision('sol_high_implementation')

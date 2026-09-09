@@ -110,7 +110,7 @@ test('automatic fanout keeps undecomposed task hints but exposes the 256 useful-
   assert.equal(critical.critical_multi_domain, true)
 })
 
-test('narrow specialists outrank a bounded Luna worker for UI, test, and root-cause language', () => {
+test('narrow specialists outrank a bounded Astra Low worker for UI, test, and root-cause language', () => {
   assert.equal(selectOfficialSubagentRole({
     description: 'UI exact bounded change',
     requiresWrite: true
@@ -518,8 +518,8 @@ test('mission preparation keeps mass totals reusable across waves and serializes
       mode: 'naruto'
     })
     assert.equal(typing.plan.suggested_agents[0], 'worker')
-    assert.equal(typing.plan.agents.worker.routed_model, 'gpt-5.6-luna')
-    assert.equal(typing.plan.agents.worker.routed_model_reasoning_effort, 'max')
+    assert.equal(typing.plan.agents.worker.routed_model, 'gpt-6-astra')
+    assert.equal(typing.plan.agents.worker.routed_model_reasoning_effort, 'low')
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }

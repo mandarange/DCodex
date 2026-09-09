@@ -10,7 +10,7 @@ SKS applies the prompting recommendations at its existing instruction boundaries
 - Keep responses concise. Copy and translation requests return the requested content.
 - Essential prompts omit strict-mode reflection and final-format rituals. Strict retains them.
 
-The existing model split remains: Luna/max for tiny mechanical work; Astra/medium
+All managed children use GPT-6 Astra: low for tiny mechanical work, medium
 for exploration and tools, high for implementation, and max for judgment. SDK
 requests for the exact `gpt-6-astra` model map retired `none`/`minimal` efforts to
 `low`; supported efforts and saved host settings remain unchanged.

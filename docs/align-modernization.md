@@ -33,7 +33,7 @@ The current SKS orchestration loop does **not** adopt programmatic tool calling 
 
 ## Agents decision
 
-The current Codex App-owned loop does **not** migrate wholesale to the Agents SDK. SKS already binds official Codex subagent lifecycle, role selection, parent integration, evidence, and recovery to the host. The Agents SDK becomes appropriate only when recurring orchestration, handoffs, guardrails, sessions, or tracing should become SDK-owned. Any future migration must preserve Astra/Luna roles, reasoning effort, state/cache behavior, tool contracts, and proof semantics.
+The current Codex App-owned loop does **not** migrate wholesale to the Agents SDK. SKS already binds official Codex subagent lifecycle, role selection, parent integration, evidence, and recovery to the host. The Agents SDK becomes appropriate only when recurring orchestration, handoffs, guardrails, sessions, or tracing should become SDK-owned. Any future migration must preserve Astra roles, reasoning effort, state/cache behavior, tool contracts, and proof semantics.
 
 ## Skill and plugin contract
 

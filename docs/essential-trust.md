@@ -117,7 +117,7 @@ Standalone Naruto launches now default to `gpt-6-astra` at the existing `max`
 effort. Active Codex tasks keep their selected model, effort, and service tier;
 managed child roles use GPT-6 Astra High for implementation, Astra Max for
 judgment, and Astra Medium for context and tool work. Tiny mechanical workers
-retain GPT-5.6 Luna Max.
+use GPT-6 Astra Low. All managed children use Astra.
 Model capabilities come from the configured Codex catalog or official
 `model/list`, with unavailable metadata reported explicitly. The changes follow
 [OpenAI's Astra guidance](https://developers.openai.com/api/docs/guides/latest-model)
