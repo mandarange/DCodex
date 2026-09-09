@@ -3227,8 +3227,8 @@
       "file": "src/scripts/agent-role-config-repair-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "e8f2a297e982580d866cb033654f91f4da5b7d2beba5b909d40d6ef3d5b883bd",
-      "callsite_sha256": "6139739ac095f36b5d3c53e19b9b1a786eb631df58211c1dd3f25cacb1852ce4",
+      "scope_contract_sha256": "f0217e6993076bf348547e004e5ca185ec5a32c85d6bda5ec14bbed127bc62ea",
+      "callsite_sha256": "9f17b2d59166c9e8eab8512b7e32678bbb654e6eed4036fb53a6322ae77f1cd4",
       "occurrence": 1,
       "reason": "src/scripts/agent-role-config-repair-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3236,8 +3236,8 @@
       "file": "src/scripts/agent-role-config-repair-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "e8f2a297e982580d866cb033654f91f4da5b7d2beba5b909d40d6ef3d5b883bd",
-      "callsite_sha256": "dfc6551546d1541311e592bb8d5ee49e5104673c66873977651664ea806b850f",
+      "scope_contract_sha256": "f0217e6993076bf348547e004e5ca185ec5a32c85d6bda5ec14bbed127bc62ea",
+      "callsite_sha256": "63403813173705c9d80200584846a6e1d2559694c65bf17e3e7c39c7deb9eac7",
       "occurrence": 1,
       "reason": "src/scripts/agent-role-config-repair-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7547,8 +7547,8 @@
       "file": "src/core/subagents/official-subagent-preparation.ts",
       "symbol": "prepareOfficialSubagentMissionLocked",
       "token": "fsp.rm",
-      "scope_contract_sha256": "3417b56dac29182527b859893293b825be241a376533188a01fdbfa04a419b84",
-      "callsite_sha256": "f8d35c858202732886c18c60d7f9bc6e396b0d8045d7600829a79d22d7e61295",
+      "scope_contract_sha256": "8640337b4152d26a27bc4fb068ea3e74bc5aaddbb41aa8afe6a67ca9840d3457",
+      "callsite_sha256": "692c33768a60be2ae776360debed56f020ea43c6072a9c003eeaced468d33d5e",
       "occurrence": 1,
       "reason": "Preparation removes its own staging directory for the mission it is assembling; the path is created by this function and never user content."
     },
